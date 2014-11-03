@@ -1,8 +1,9 @@
 import logging; logger = logging.getLogger("morsebuilder." + __name__)
 import os
-import json
+import pprint
 from morse.core import mathutils
 from morse.builder.morsebuilder import *
+from morse.builder.data import MORSE_DATASTREAM_MODULE
 from morse.builder.abstractcomponent import Configuration
 from morse.core.morse_time import TimeStrategies
 
@@ -105,7 +106,7 @@ class Environment(Component):
             bpymorse.get_last_text().name = 'multinode_config.py'
         cfg = bpymorse.get_text('multinode_config.py')
         cfg.clear()
-        cfg.write('node_config = ' + json.dumps(node_config, indent=1) )
+        cfg.write('node_config = ' + pprint.pformat(node_config) )
         cfg.write('\n')
 
     def _rename_components(self):
@@ -155,7 +156,7 @@ class Environment(Component):
         for component in AbstractComponent.components:
             if isinstance(component, Robot) and component.default_interface:
                 for child in component.children:
-                    if child.is_morseable(): 
+                    if child.is_morseable():
                         if not Configuration.has_datastream_configuration(
                                 child, component.default_interface) and \
                             child.is_exportable():
@@ -521,6 +522,14 @@ class Environment(Component):
             self.multinode_distribution = distribution
         self._multinode_configured = True
 
+    def configure_stream_manager(self, stream_manager, **kwargs):
+        if stream_manager in MORSE_DATASTREAM_MODULE:
+            stream_manager_classpath = MORSE_DATASTREAM_MODULE[stream_manager]
+        else:
+            stream_manager_classpath = stream_manager
+
+        Configuration.link_stream_manager_config(stream_manager_classpath, kwargs)
+
     def configure_service(self, datastream):
         logger.warning("configure_service is deprecated, use add_service instead")
         return self.add_service(datastream)
@@ -536,7 +545,7 @@ class Environment(Component):
 
             env = Environement('indoors-1/indoor-1', fastmode = True)
             # Set the simulation management services to be available from ROS:
-            env.configure_service('ros')
+            env.add_service('ros')
 
         """
         AbstractComponent.add_service(self, datastream, "simulation")
@@ -591,7 +600,7 @@ class Environment(Component):
                 compress=compress)
 
     def set_log_level(self, component, level):
-        """ 
+        """
         Set the debug level of the component to the level level.
 
         :param component: the class name of the component

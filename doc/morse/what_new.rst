@@ -29,14 +29,33 @@ Sensors
 - :doc:`user/sensors/laserscanner` gain the possibility to return also a
   remission value at the `rssi` level.
 
+- Introduce the new sensor :doc:`user/sensors/radar_altimeter`, allowing to
+  retrieve the distance to the ground.
+
 Middlewares
 -----------
+
+General
++++++++
+
+- Each datastream manager now get an action handler, allowing them to run some
+  specific middleware behaviour once by simulation turn.
 
 Socket
 ++++++
 
 - Socket middleware now accepts the keyword 'port' to specify on which port
   you want the socket binds itself.
+
+
+Builder API
+-----------
+
+API addition
+++++++++++++
+
+- Add a method ``Environment.configure_stream_manager`` allowing to pass
+  option/information to each datastream manager.
 
 What's new in MORSE 1.2?
 ========================
