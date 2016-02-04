@@ -15,6 +15,7 @@ def tag_role(role, rawtext, text, lineno, inliner,
                   'socket': ('middleware', 'user/middlewares/socket'),
                   'yarp': ('middleware', 'user/middlewares/yarp'),
                   'moos': ('middleware', 'user/middlewares/moos'),
+                  'hla': ('middleware', 'user/middlewares/hla', 'multinode'),
                   'builder': ('api', 'user/builder'),
                   'datastream': ('access', None),
                   'service': ('access', 'dev/services')}
@@ -40,6 +41,7 @@ def tag_role(role, rawtext, text, lineno, inliner,
     node = nodes.literal(rawtext, text)
     node['classes'].append("tag")
     node['classes'].append("tag-" + categories[text][0])
+    node['classes'].append("tag-" + text)
 
     return [node], []
 

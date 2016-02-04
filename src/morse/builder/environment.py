@@ -41,6 +41,7 @@ class Environment(Component):
         self._created = False
         self._camera_location = [5, -5, 5]
         self._camera_rotation = [0.7854, 0, 0.7854]
+        self._focal_length = 20.0
         self._environment_file = filename
         self._multinode_configured = False
         self._display_camera = None
@@ -215,6 +216,18 @@ class Environment(Component):
         """
         self._camera_speed = speed
 
+    def set_camera_focal_length(self, focal_length=20.0):
+        """ Set the focal length of the default camera
+
+        :param focal_length: focal length im mm (default 20.0)
+
+        .. code-block:: python
+
+            env.set_camera_focal_length(50.0)
+
+        """
+        self._focal_length = focal_length
+
     def _cfg_camera_scene(self):
         scene = bpymorse.get_context_scene()
         scene.name = 'S.MORSE_LOGIC'
@@ -333,7 +346,7 @@ class Environment(Component):
         camera_fp.game.properties['Speed'].value = self._camera_speed
         camera_fp.data.clip_start = self._camera_clip_start
         camera_fp.data.clip_end   = self._camera_clip_end
-        camera_fp.data.lens = 20 # set focal length in mm
+        camera_fp.data.lens = self._focal_length # set focal length in mm
         # Make CameraFP the active camera
         bpymorse.deselect_all()
         camera_fp.select = True
@@ -362,6 +375,48 @@ class Environment(Component):
         """
         # Set the color at the horizon to dark azure
         bpymorse.get_context_scene().world.horizon_color = color
+
+    def enable_mist(self,value=True):
+        """ Enables or disables mist
+
+        See `World/Mist on the Blender Manual
+        <http://wiki.blender.org/index.php/Doc:2.6/Manual/World/Mist>`_
+        for more information about this particular setting.
+
+        :param value: indicate whether to enable/disable mist
+        """
+        if isinstance(value, bool):
+            bpymorse.get_context_scene().world.mist_settings.use_mist = value
+
+    def set_mist_settings(self, **settings):
+        """ Sets the mist settings for the scene
+
+        See `World/Mist on the Blender Manual
+        <http://wiki.blender.org/index.php/Doc:2.6/Manual/World/Mist>`_
+        for more information about this particular setting.
+
+        Optional arguments need to be specified with identifyer:
+        :param enable:     Enables or disables mist
+        :param intensity:  Overall minimum intensity of the mist effect in [0,1]
+        :param start:      Starting distance of the mist, measured from the camera
+        :param depth:      Distance over which the mist effect fades in
+        :param falloff:     Type of transition used to fade mist enum in ['QUADRATIC', 'LINEAR', 'INVERSE_QUADRATIC'], default 'QUADRATIC'
+
+        """
+
+        # set the values through bpymorse interface, erronous values are taken care of elsewhere
+        if 'falloff' in settings:
+            bpymorse.get_context_scene().world.mist_settings.falloff = settings['falloff']
+        if 'intensity' in settings:
+            bpymorse.get_context_scene().world.mist_settings.intensity = settings['intensity']
+        if 'start' in settings:
+            bpymorse.get_context_scene().world.mist_settings.start = settings['start']
+        if 'depth' in settings:
+            bpymorse.get_context_scene().world.mist_settings.depth = settings['depth']
+        if 'enable' in settings:
+            self.enable_mist(settings['enable'])
+
+
 
     def show_debug_properties(self, value=True):
         """ Display the value of the game-properties marked as debug

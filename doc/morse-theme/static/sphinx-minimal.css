@@ -141,6 +141,12 @@ img {
     padding: 5px;
 }
 
+.full-image {
+    max-width:100% !important;
+    border: none !important;
+    padding: 10px !important;
+}
+
 .math {
     border: 0 !important;
     padding: 0 !important;
@@ -597,5 +603,25 @@ p.admonition-title {
 
 .tag-access {
     background-color: #268bd2;
+    color: #fff;
+}
+
+.tag-yarp {
+    background-color: #333333;
+    color: #fff;
+}
+
+.tag-ros {
+    background-color: #53497e;
+    color: #fff;
+}
+
+.tag-moos {
+    background-color: #7e2433;
+    color: #fff;
+}
+
+.tag-pocolibs {
+    background-color: #3a7e25;
     color: #fff;
 }
