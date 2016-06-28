@@ -12,7 +12,7 @@ Fire a console, type ``sudo apt-get install morse-simulator`` (or click here:
 
 Here you are!
 
-.. image:: ../../media/initial_sim.jpg
+.. image:: ../../media/environments/sandbox.jpg
   :align: center
 
 Installing this package also directly give you full support for :tag:`ros`,
@@ -110,9 +110,13 @@ Prerequisites
 - ``python-dev`` package
 - Blender (>= 2.65) build with Python >= 3.3. You can simply get a binary from
   `Blender website <http://www.blender.org/download/get-blender/>`_
+- numpy for python3 (often ``py3-numpy `` or ``python3-numpy``)
 
 .. note::
     If you plan to build packages for MORSE, please read the notes on packaging below.
+
+.. note::
+    If you use a Blender binary, numpy is already shipped within it.
 
 Installation
 ++++++++++++
@@ -122,9 +126,9 @@ Clone with ``git`` or download the latest version of the source code::
 
   $ git clone https://github.com/morse-simulator/morse.git
   
-(the lastest revision is always reasonably stable, and we recommend you to use
+(the latest revision is always reasonably stable, and we recommend you to use
 it. However, if you prefer to use the stable branch, you can checkout the
-``1.3_STABLE`` branch or download it `from here
+``1.4_STABLE`` branch or download it `from here
 <https://github.com/morse-simulator/morse/releases/latest>`_.
 
 MORSE relies on a standard `CMake` workflow: go to the directory where you
@@ -158,7 +162,7 @@ Middleware-specific notes
 +++++++++++++++++++++++++
 
 - :tag:`ros` Since MORSE runs with Python 3, you need to install the packages
-  ``python3-rospkg``, ``python3-catkin-tools`` and ``python3-yaml``.  If these
+  ``python3-catkin-tools`` and ``python3-yaml``.  If these
   packages are not available for your distribution, :doc:`check the manual
   instructions <installation/mw/ros>`.
 - :tag:`yarp` If needed, instructions to install YARP on your system are :doc:`available here <installation/mw/yarp>`.

@@ -10,7 +10,6 @@ import struct
 from morse.testing.ros import RosTestCase
 from morse.testing.testing import testlogger
 
-import roslib
 import rospy
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import PointCloud2
@@ -66,7 +65,8 @@ class DepthCameraRosTest(RosTestCase):
             # assert that : near <= z <= far
             for i in range(0, len(msg.data) - 12, 12):
                 xyz = struct.unpack('fff', msg.data[i:i+12])
-                self.assertTrue(1 <= xyz[2] <= 20)
+                self.assertGreaterEqual(xyz[2], 1)
+                self.assertLessEqual(xyz[2], 20)
 
             time.sleep(0.2) # wait for turning
 

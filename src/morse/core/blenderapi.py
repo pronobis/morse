@@ -4,11 +4,13 @@ documentation generation purposes).
 """
 
 import sys
+import os
 
 fake = False
 
 # running in Blender?
-if sys.executable.endswith('blender'):
+# Note: Run blender-app.exe when blender v2.75 in Window 7
+if os.path.basename(sys.executable) in ['blender', 'blender.exe', 'blender-app.exe']:
     import bpy
     try:
         import bge
@@ -17,10 +19,12 @@ if sys.executable.endswith('blender'):
         # typically at 'Builder' stage.
         fake = True
 else:
-    print("WARNING: MORSE is running outside Blender! (sys.executable != blender)")
+    print("WARNING: MORSE is running outside Blender! (sys.executable == '%s')" % sys.executable)
     fake = True
 
 from morse.core import mathutils
+import logging
+logger = logging.getLogger("morse." + __name__)
 
 UPARROWKEY = None
 DOWNARROWKEY = None
@@ -34,6 +38,8 @@ BKEY = None
 DKEY = None
 EKEY = None
 FKEY = None
+GKEY = None
+HKEY = None
 IKEY = None
 JKEY = None
 KKEY = None
@@ -43,6 +49,7 @@ OKEY = None
 QKEY = None
 RKEY = None
 SKEY = None
+TKEY = None
 UKEY = None
 VKEY = None
 WKEY = None
@@ -71,6 +78,8 @@ if not fake:
     DKEY = bge.events.DKEY
     EKEY = bge.events.EKEY
     FKEY = bge.events.FKEY
+    GKEY = bge.events.GKEY
+    HKEY = bge.events.HKEY
     IKEY = bge.events.IKEY
     JKEY = bge.events.JKEY
     KKEY = bge.events.KKEY
@@ -80,6 +89,7 @@ if not fake:
     QKEY = bge.events.QKEY
     RKEY = bge.events.RKEY
     SKEY = bge.events.SKEY
+    TKEY = bge.events.TKEY
     UKEY = bge.events.UKEY
     VKEY = bge.events.UKEY
     WKEY = bge.events.WKEY
@@ -225,9 +235,22 @@ def getalwayssensors(obj):
     else:
         return []
 
+def get_armatures(obj):
+    if not fake:
+        return [child for child in obj.children if isinstance(child, bge.types.BL_ArmatureObject)]
+    else:
+        return []
+
+
 def getfrequency():
     if not fake:
         return bge.logic.getLogicTicRate()
+    else:
+        return 0
+
+def setfrequency(value):
+    if not fake:
+        return bge.logic.setLogicTicRate(value)
     else:
         return 0
 
@@ -283,3 +306,30 @@ def gravity():
             return mathutils.Vector((0.0, 0.0, -9.81))
     else:
         return None
+
+def clock_time():
+    if not fake:
+        if hasattr(bge.logic, 'getClockTime'):
+            return bge.logic.getClockTime()
+        else:
+            return -1
+    else:
+        return -1
+
+def frame_time():
+    if not fake:
+        if hasattr(bge.logic, 'getFrameTime'):
+            return bge.logic.getFrameTime()
+        else:
+            return -1
+    else:
+        return -1
+
+def set_time_scale(time_scale):
+    if not fake:
+        if hasattr(bge.logic, 'setTimeScale'):
+            bge.logic.setTimeScale(time_scale)
+            return True
+        else:
+            logger.warning("setTimeScale requires at least Blender 2.77")
+    return False

@@ -10,7 +10,6 @@ import struct
 from morse.testing.ros import RosTestCase
 from morse.testing.testing import testlogger
 
-import roslib
 import rospy
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Image, CameraInfo
@@ -73,7 +72,9 @@ class VideoCameraRosTest(RosTestCase):
             self.assertEqual(msg.header.frame_id, camera_info_frame)
 
             self.assertEqual(len(msg.data), 128*128*4) # RGBA
-            self.assertTrue (msg.data != old)
+            # dont use assertNotEqual here
+            #   dumping raw image data in log is not relevant
+            self.assertTrue(msg.data != old)
             old = msg.data
 
             time.sleep(0.2) # wait for turning

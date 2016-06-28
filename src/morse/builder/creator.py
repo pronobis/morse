@@ -70,6 +70,7 @@ class ComponentCreator(AbstractComponent):
             self.morseable()
 
         self.properties(Component_Tag = True, classpath = self.__class__._classpath)
+        self.frequency(60)
 
     def parent_root(self, objects):
         # Parent the root objects with this Component
@@ -107,7 +108,7 @@ class ComponentCreator(AbstractComponent):
         return imported_objects
 
 class SensorCreator(ComponentCreator):
-    def __init__(self, name="SensorCreator",
+    def __init__(self, name = None, 
                        action = ComponentCreator.APPEND_EMPTY,
                        make_morseable = True):
 
@@ -121,7 +122,7 @@ class SensorCreator(ComponentCreator):
 
 class ActuatorCreator(ComponentCreator):
 
-    def __init__(self, name="ActuatorCreator", 
+    def __init__(self, name = None,
                        action = ComponentCreator.APPEND_EMPTY,
                        blendfile = None,
                        blendobject = None,

@@ -39,7 +39,8 @@ MORSE_DATASTREAM_MODULE = {
     'pocolibs': 'morse.middleware.pocolibs_datastream.PocolibsDatastreamManager',
     'text': 'morse.middleware.text_datastream.TextDatastreamManager',
     'moos': 'morse.middleware.moos_datastream.MOOSDatastreamManager',
-    'hla': 'morse.middleware.hla_datastream.HLADatastreamManager'
+    'hla': 'morse.middleware.hla_datastream.HLADatastreamManager',
+    'mavlink': 'morse.middleware.mavlink_datastream.MavlinkDatastreamManager',
 }
 
 MORSE_MODIFIER_DICT = {
@@ -51,6 +52,34 @@ MORSE_MODIFIER_DICT = {
         'morse.actuators.waypoint.Waypoint': "morse.modifiers.ned.CoordinatesFromNED",
         'morse.actuators.orientation.Orientation': "morse.modifiers.ned.AnglesFromNED",
         'morse.actuators.teleport.Teleport': "morse.modifiers.ned.CoordinatesFromNED",
+    },
+    'ECEF': {
+        'morse.sensors.pose.Pose': "morse.modifiers.ecef.CoordinatesToECEF",
+        'morse.sensors.gps.GPS': "morse.modifiers.ecef.CoordinatesToECEF",
+        'morse.actuators.destination.Destination': "morse.modifiers.ecef.CoordinatesFromECEF",
+        'morse.actuators.waypoint.Waypoint': "morse.modifiers.ecef.CoordinatesFromECEF",
+        'morse.actuators.teleport.Teleport': "morse.modifiers.ecef.CoordinatesFromECEF",
+    },
+    'feet': {
+        'morse.sensors.pose.Pose': "morse.modifiers.feet.MeterToFeet",
+        'morse.sensors.gps.GPS': "morse.modifiers.feet.MeterToFeet",
+        'morse.actuators.destination.Destination': "morse.modifiers.feet.FeetToMeter",
+        'morse.actuators.waypoint.Waypoint': "morse.modifiers.feet.FeetToMeter",
+        'morse.actuators.teleport.Teleport': "morse.modifiers.feet.FeetToMeter"
+    },
+    'geodetic': {
+        'morse.sensors.pose.Pose': "morse.modifiers.geodetic.CoordinatesToGeodetic",
+        'morse.sensors.gps.GPS': "morse.modifiers.geodetic.CoordinatesToGeodetic",
+        'morse.actuators.destination.Destination': "morse.modifiers.geodetic.CoordinatesFromGeodetic",
+        'morse.actuators.waypoint.Waypoint': "morse.modifiers.geodetic.CoordinatesFromGeodetic",
+        'morse.actuators.teleport.Teleport': "morse.modifiers.geodetic.CoordinatesFromGeodetic",
+    },
+    'geocentric': {
+        'morse.sensors.pose.Pose': "morse.modifiers.geocentric.CoordinatesToGeocentric",
+        'morse.sensors.gps.GPS': "morse.modifiers.geocentric.CoordinatesToGeocentric",
+        'morse.actuators.destination.Destination': "morse.modifiers.geocentric.CoordinatesFromGeocentric",
+        'morse.actuators.waypoint.Waypoint': "morse.modifiers.geocentric.CoordinatesFromGeocentric",
+        'morse.actuators.teleport.Teleport': "morse.modifiers.geocentric.CoordinatesFromGeocentric",
     },
     'UTM' : {
         'morse.sensors.pose.Pose': "morse.modifiers.utm.CoordinatesToUTM",
@@ -105,6 +134,14 @@ MORSE_DATASTREAM_DICT = {
             "socket": INTERFACE_DEFAULT_OUT,
             "yarp": INTERFACE_DEFAULT_OUT,
             "text": INTERFACE_DEFAULT_OUT
+            }
+        },
+    "morse.sensors.attitude.Attitude": {
+        "default": {
+            "socket": INTERFACE_DEFAULT_OUT,
+            "yarp": INTERFACE_DEFAULT_OUT,
+            "text": INTERFACE_DEFAULT_OUT,
+            "mavlink": 'morse.middleware.mavlink.attitude.AttitudeSensor',
             }
         },
     "morse.sensors.barometer.Barometer": {
@@ -229,8 +266,16 @@ MORSE_DATASTREAM_DICT = {
             "yarp": INTERFACE_DEFAULT_OUT,
             "text": INTERFACE_DEFAULT_OUT,
             "pocolibs": ['morse.middleware.pocolibs.sensors.pom.PomSensorPoster',
-                         'morse.middleware.pocolibs.sensors.pom.PomPoster']
+                         'morse.middleware.pocolibs.sensors.pom.PomPoster'],
+            "mavlink": 'morse.middleware.mavlink.odometry_to_local_ned.OdometrySensor'
             }
+        },
+    "morse.sensors.magnetometer.Magnetometer": {
+        "default": {
+            "socket": INTERFACE_DEFAULT_OUT,
+            "yarp": INTERFACE_DEFAULT_OUT,
+            "text": INTERFACE_DEFAULT_OUT,
+        }
         },
     "morse.sensors.pose.Pose": {
         "default": {
@@ -317,9 +362,9 @@ MORSE_DATASTREAM_DICT = {
         },
     "morse.sensors.depth_camera.DepthVideoCamera": {
         "default": {
+            "socket": 'morse.middleware.sockets.depth_camera.DepthCameraPublisher',
             "ros": 'morse.middleware.ros.video_camera.DepthCameraPublisher',
-            "socket": 'morse.middleware.sockets.video_camera.VideoCameraPublisher',
-            "yarp": 'morse.middleware.yarp.video_camera.YarpImagePublisher',
+            "yarp": 'morse.middleware.yarp.video_depth_camera.YarpImageFloatPublisher',
             "pocolibs": 'morse.middleware.pocolibs.sensors.viam.ViamPoster'
             }
         },
@@ -346,6 +391,13 @@ MORSE_DATASTREAM_DICT = {
             }
         },
     "morse.actuators.force_torque.ForceTorque": {
+        "default": {
+            "socket": INTERFACE_DEFAULT_IN,
+            "yarp": INTERFACE_DEFAULT_IN,
+            "ros": 'morse.middleware.ros.force_torque.WrenchReader',
+            }
+        },
+    "morse.actuators.externalForce.ExternalForce": {
         "default": {
             "socket": INTERFACE_DEFAULT_IN,
             "yarp": INTERFACE_DEFAULT_IN,
@@ -387,10 +439,17 @@ MORSE_DATASTREAM_DICT = {
                          'morse.middleware.pocolibs.actuators.platine.PlatineAxisPoster']
             }
         },
+    "morse.actuators.quadrotor_dynamic_control.QuadrotorDynamicControl": {
+            "default": {
+                "socket": INTERFACE_DEFAULT_IN,
+                "yarp": INTERFACE_DEFAULT_IN,
+                }
+            },
     "morse.actuators.rotorcraft_attitude.RotorcraftAttitude": {
         "default": {
             "socket": INTERFACE_DEFAULT_IN,
             "yarp": INTERFACE_DEFAULT_IN,
+            "mavlink": "morse.middleware.mavlink.read_attitude_target.AttitudeTarget",
             }
         },
     "morse.actuators.rotorcraft_velocity.RotorcraftVelocity": {
@@ -404,6 +463,7 @@ MORSE_DATASTREAM_DICT = {
             "ros": 'morse.middleware.ros.read_pose.PoseReader',
             "socket": INTERFACE_DEFAULT_IN,
             "yarp": INTERFACE_DEFAULT_IN,
+            "mavlink": 'morse.middleware.mavlink.local_position_ned_to_waypoint.WaypointActuator',
             }
         },
     "morse.actuators.stabilized_quadrotor.StabilizedQuadrotor": {

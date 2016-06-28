@@ -7,7 +7,7 @@ from morse.builder.data import MORSE_DATASTREAM_MODULE
 from morse.builder.abstractcomponent import Configuration
 from morse.core.morse_time import TimeStrategies
 
-class Environment(Component):
+class Environment(AbstractComponent):
     """ Class to configure the general environment of the simulation
 
     It handles the background environment in which your robots are simulated,
@@ -17,7 +17,8 @@ class Environment(Component):
     """
     multinode_distribution = dict()
 
-    def __init__(self, filename, fastmode = False, component_renaming = True):
+    def __init__(self, filename, main_scene = None, fastmode = False, component_renaming = True,
+                                                                      auto_tune_time = True):
         """
         :param fastmode: (default: False) if True, disable most visual
                          effects (like lights...) to get the fastest
@@ -25,9 +26,31 @@ class Environment(Component):
                          instance, or in simulations where realistic
                          environment texturing is not required (*e.g.*,
                          no video camera)
-
+        :param component_renaming: (default: True): if True,
+            automatically rename Blender object on the base of builder
+            python object. It is the recommanded settings, and is mandatory
+            if you use pymorse. Only set to False if you notice trouble with
+            it, and report the issue to the Morse project
+        :param auto_tune_time: (default: True): If True, Morse will try
+            to compute a good setting for your simulation, on the basis on the
+            described scene. The feature is automatically disabled if you make
+            an explicit call to some time-related method, such as simulator_frequency.
+            Note that it is an experimental feature, so disable it if you see
+            problem with your simulation, and report it to the Morse project.
         """
-        Component.__init__(self, 'environments', filename)
+        AbstractComponent.__init__(self, category = 'environments', filename = filename)
+        if main_scene:
+            base_scene = bpymorse.get_context_scene().name
+            self.append_scenes()
+            bpymorse.deselect_all()
+            scene = bpymorse.set_active_scene(main_scene)
+            for obj in scene.objects:
+                obj.select = True
+            bpymorse.make_links_scene(scene=base_scene)
+            bpymorse.del_scene()
+            bpymorse.set_active_scene(base_scene)
+        else:
+            self.append_meshes()
         AbstractComponent.components.remove(self) # remove myself from the list of components to ensure my destructor is called
 
         self._handle_default_interface()
@@ -37,6 +60,7 @@ class Environment(Component):
             self._rename_components()
 
         self.fastmode = fastmode
+        self.auto_tune_time = auto_tune_time
 
         self._created = False
         self._camera_location = [5, -5, 5]
@@ -117,8 +141,17 @@ class Environment(Component):
         If a name is already set (with 'obj.name=...'), it is used as it,
         and only the hierarchy is added to the name.
         """
+        import inspect
+        frame = inspect.currentframe()
+        frames = inspect.getouterframes(frame)
+        size_stack = len(frames)
+        for i in range(size_stack - 1, 0, -1):
+            if frames[i][3] == '__init__':
+                break
+        del frame
+        del frames
 
-        AbstractComponent.close_context(3)
+        AbstractComponent.close_context(i + 2)
 
         for component in AbstractComponent.components:
             if isinstance(component, Robot):
@@ -146,6 +179,18 @@ class Environment(Component):
 
                 renametree(component, [])
 
+    def _configure_default_interface(self, component, interface):
+        for child in component.children:
+            if child.is_morseable():
+                if not Configuration.has_datastream_configuration(child, interface) and \
+                   child.is_exportable():
+                    child.add_stream(interface)
+
+                if not Configuration.has_service_configuration(child, interface):
+                    child.add_service(interface)
+
+                self._configure_default_interface(child, interface)
+
     def _handle_default_interface(self):
         """
         Handle the semantic of default interface.
@@ -156,15 +201,7 @@ class Environment(Component):
         """
         for component in AbstractComponent.components:
             if isinstance(component, Robot) and component.default_interface:
-                for child in component.children:
-                    if child.is_morseable():
-                        if not Configuration.has_datastream_configuration(
-                                child, component.default_interface) and \
-                            child.is_exportable():
-                            child.add_stream(component.default_interface)
-                        if not Configuration.has_service_configuration(
-                                child, component.default_interface):
-                            child.add_service(component.default_interface)
+                self._configure_default_interface(component, component.default_interface)
 
 
 
@@ -267,9 +304,39 @@ class Environment(Component):
             try:
                 self._node_name = os.environ["MORSE_NODE"]
             except KeyError:
-                self._node_name = os.uname()[1]
+                import socket
+                self._node_name = socket.gethostname()
         else:
             self._node_name = name
+
+        # Check time properties
+        scene = bpymorse.get_context_scene()
+        base_frequency = scene.game_settings.fps
+        max_frequency_requested = Configuration.max_frequency()
+        time_scale = self.property_value('time_scale')
+        if self.auto_tune_time:
+            self.use_vsync('OFF')
+            # notyet :D
+            # self.use_internal_syncer()
+            if max_frequency_requested > base_frequency:
+                self.simulator_frequency(max_frequency_requested)
+        else:
+            # Just report bad looking configuration
+            if max_frequency_requested > base_frequency:
+                logger.warning("You are requesting a component at %d Hz, but the "
+                               "simulator main loop is running only at %d Hz. Try "
+                               "to raise the frequency of the simulation using "
+                               "env.simulator_frequency(%d)" %
+                               (max_frequency_requested, base_frequency, max_frequency_requested))
+            if time_scale:
+                real_fps_requested = max_frequency_requested * time_scale
+                if real_fps_requested > 1000.0:
+                    logger.warning("You are requesting a component at %d Hz, with "
+                                   " time acceleration factor of %f, leading to a "
+                                   " real frequency of %d Hz. It will probably hard "
+                                   " to reach this value with Morse, so consider to "
+                                   " reduce frequency of component or speed factor " %
+                                   (max_frequency_requested, time_scale, real_fps_requested))
 
         # Create a new scene for each camera, with specific render resolution
         # Must be done at the end of the builder script, after renaming
@@ -358,6 +425,16 @@ class Environment(Component):
 
         hud_text = bpymorse.get_object('Keys_text')
         hud_text.scale.y = 0.027 # to fit the HUD_plane
+
+        # Create a cube to compute the dt between two frames
+        _dt_name = '__morse_dt_analyser'
+        cube = Cube(_dt_name)
+        cube.scale = (0.01, 0.01, 0.01)
+        cube.location = [0.0, 0.0, -5000.0]
+        cube_obj = bpymorse.get_object(_dt_name)
+        cube_obj.game.physics_type = 'DYNAMIC'
+        cube_obj.hide_render = True
+        cube_obj.game.lock_location_z = True
 
         self._created = True
         # in case we are in edit mode, do not exit on error with CLI
@@ -482,12 +559,40 @@ class Environment(Component):
         """
         if strategy == TimeStrategies.FixedSimulationStep:
             bpymorse.get_context_scene().game_settings.use_frame_rate = 0
+            self.auto_tune_time = False
         elif strategy == TimeStrategies.BestEffort:
             bpymorse.get_context_scene().game_settings.use_frame_rate = 1
         else:
             raise ValueError(strategy)
 
         self.properties(time_management = strategy)
+
+    def set_time_scale(self, slowdown_by = None, accelerate_by = None):
+        """ Slow down or accelerate the simulation relative to real-time
+        (default behaviour: real-time simulation) by modifying the *time
+        scale* of the simulation.
+
+        :param slowndown_by: factor by which the simulation should be
+        slowed down, relative to real-time
+        :param accelerate_by: factor by which the simulation should be
+        accelerated, relative to real-time
+        You must pass only one of these options
+        """
+        if (not slowdown_by and not accelerate_by) or \
+           (slowdown_by and accelerate_by):
+            logger.error("You must call set_time_scale with exacltly one of "
+                         "the arguments \"slowdown_by\" or \"accelerate_by\"")
+            return
+
+        if slowdown_by:
+            self.properties(time_scale = 1.0 / slowdown_by)
+        else:
+            self.properties(time_scale = accelerate_by)
+
+    def use_internal_syncer(self):
+        self.auto_tune_time = False
+        self.properties(use_internal_syncer = True)
+        self.configure_stream_manager('socket', time_sync = True)
 
     def fullscreen(self, fullscreen=True):
         """ Run the simulation fullscreen
@@ -667,6 +772,58 @@ class Environment(Component):
 
         my_logger = logging.getLogger('morse.' + component)
         my_logger.setLevel(level.upper())
+
+    def set_background_scene(self, scene):
+        """
+        Set the background scene used by main scene
+
+        :param scene: the name of the scene to use in background
+        """
+        bpymorse.get_context_scene().background_set = bpymorse.get_scene(scene)
+
+    def simulator_frequency(self, base_frequency=60, logic_step_max=20, physics_step_max=20):
+        """ Tune the frequency of the simulation
+
+        :param base_frequency: Nominal number of game frames per second
+            (physics fixed timestep = 1/ (base_frequency * time_scale),
+            independently of actual frame rate)
+        :type base_frequency: default 60
+        :param logic_step_max: Maximum number of logic frame per game frame if
+            graphics slows down the game, higher value allows better
+            synchronization with physics
+        :type logic_step_max: default value : 20
+        :param physics_step_max: Maximum number of physics step per game frame
+            if graphics slows down the game, higher value allows physics to keep
+            up with realtime
+        :type physics_step_max: default value : 20
+
+        usage::
+
+            env.simulator_frequency(120, 5, 5)
+
+        .. note:: It is recommended to use the same value for
+           logic_step_max and physics_step_max
+        """
+        scene = bpymorse.get_context_scene()
+        scene.game_settings.fps = base_frequency
+        scene.game_settings.logic_step_max = logic_step_max
+        scene.game_settings.physics_step_max = physics_step_max
+        self.auto_tune_time = False
+
+    def use_vsync(self, vsync):
+        """  Configure vsync parameter for the current scene
+
+        :param vsync: should be one ['ON', 'OFF', 'ADAPTIVE']
+        """
+        bpymorse.get_context_scene().game_settings.vsync = vsync
+
+    def use_relative_time(self, relative_time):
+        """ Configure if Morse should exports relative time (time since
+        Morse start) or "absolute" start (time since Epoch)
+        """
+        self.properties(use_relative_time = relative_time)
+
+
 
     def __del__(self):
         """ Call the create method if the user has not explicitly called it """

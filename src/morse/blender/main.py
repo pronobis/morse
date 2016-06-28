@@ -3,6 +3,7 @@ from morse.helpers.morse_logging import SECTION, ENDSECTION
 import sys
 import os
 import imp
+from subprocess import Popen, PIPE
 
 # Force the full import of blenderapi so python computes correctly all
 # values in its  namespace
@@ -295,6 +296,30 @@ def check_dictionaries():
     logger.info("------------------------------------")
     logger.info ("")
 
+def load_datastream_manager(datastream_name):
+    datastream_instance = persistantstorage.stream_managers.get(datastream_name, None)
+    if not datastream_instance:
+        kwargs = component_config.stream_manager.get(datastream_name, {})
+        try:
+            datastream_instance = create_instance(datastream_name, None, kwargs)
+        except Exception as e:
+            logger.error("Catched exception %s in the construction of %s" %
+                         (e, datastream_name))
+            return None 
+
+        if datastream_instance:
+            persistantstorage.stream_managers[datastream_name] = datastream_instance
+            logger.info("\tDatastream interface '%s' created" % datastream_name)
+        else:
+            logger.error("INITIALIZATION ERROR: Datastream '%s' module"
+                         " could not be found! \n"
+                         " Could not import modules required for the "
+                         "desired datastream interface. Check that "
+                         "they can be found inside your PYTHONPATH "
+                         "variable." % datastream_name)
+            return None
+    return datastream_instance
+
 def link_datastreams():
     """ Read the configuration script (inside the .blend file)
         and assign the correct datastream and options to each component. """
@@ -328,24 +353,7 @@ def link_datastreams():
             # Skip the configuration of this component
             continue
 
-        # If the list contains only strings, insert the list inside another one.
-        # This is done for backwards compatibility with the previous
-        #  syntax that allowed only one middleware per component
-        if isinstance (datastream_list[0], str):
-            datastream_list = [datastream_list]
-
-        # What is the direction of our stream?
-        # -> for Sensors, they *publish*,
-        # -> for Actuator, they *read*
-        if isinstance(instance, Sensor):
-            direction = OUT
-        elif isinstance(instance, Actuator):
-            direction = IN
-        else:
-            assert False
-
-        persistantstorage.datastreams[component_name] = (direction,
-                                     [d[0] for d in datastream_list])
+        persistantstorage.datastreams[component_name] = datastream_list
 
         # Register all datastream's in the list
         for datastream_data in datastream_list:
@@ -353,28 +361,9 @@ def link_datastreams():
             datastream_name = datastream_data[0]
             logger.info("Component: '%s' using datastream '%s'" % (component_name, datastream_name))
 
-            # Look for the listed datastream in the dictionary of active datastream's
-            datastream_instance = persistantstorage.stream_managers.get(datastream_name, None)
-            if not datastream_instance:
-                kwargs = component_config.stream_manager.get(datastream_name, {})
-                try:
-                    datastream_instance = create_instance(datastream_name, None, kwargs)
-                except Exception as e:
-                    logger.error("Catched exception %s in the construction of %s" %
-                                 (e, datastream_name))
-                    return False
-
-                if datastream_instance:
-                    persistantstorage.stream_managers[datastream_name] = datastream_instance
-                    logger.info("\tDatastream interface '%s' created" % datastream_name)
-                else:
-                    logger.error("INITIALIZATION ERROR: Datastream '%s' module"
-                                 " could not be found! \n"
-                                 " Could not import modules required for the "
-                                 "desired datastream interface. Check that "
-                                 "they can be found inside your PYTHONPATH "
-                                 "variable." % datastream_name)
-                    return False
+            datastream_instance = load_datastream_manager(datastream_name)
+            if not datastream_name:
+                return False
 
             datastream_instance.register_component(component_name, instance, datastream_data)
 
@@ -487,11 +476,12 @@ def add_modifiers():
 
         for mod_data in mod_list:
             modifier_name = mod_data[0]
+            direction = mod_data[1]
             logger.info("Component: '%s' operated by '%s'" %
                         (component_name, modifier_name))
             # Make the modifier object take note of the component
             modifier_instance = register_modifier(modifier_name, instance,
-                                                  mod_data[1])
+                                                  direction, mod_data[2])
             if not modifier_instance:
                 return False
             persistantstorage.modifierDict[modifier_name] = modifier_instance
@@ -529,13 +519,33 @@ def init_multinode():
     except (NameError, AttributeError) as detail:
         logger.warning("No node name defined. Using host name.\n"
                         "\tException: ", detail)
-        node_name = os.uname()[1]
+        import socket
+        node_name = socket.gethostname()
 
     logger.info ("This is node '%s'" % node_name)
     # Create the instance of the node class
 
     persistantstorage.node_instance = create_instance(classpath,
                                                       node_name, server_address, server_port)
+
+class MorseSyncProcess:
+    def __init__(self):
+        args = ['morse_sync', '-p', str(1.0/morse.core.blenderapi.getfrequency())]
+        socket_manager = 'morse.middleware.socket_datastream.SocketDatastreamManager'
+        socket_properties = component_config.stream_manager[socket_manager]
+        if 'sync_port' in socket_properties:
+            args = args + ['-P', str(socket_properties['sync_port'])]
+        self.proc = Popen(args, stdin=PIPE)
+        # always load datastream manager if we use use_internal_syncer
+        load_datastream_manager(socket_manager)
+
+    def set_period(self, new_value):
+        msg = "set_period " + str(new_value) + "\n\n"
+        self.proc.stdin.write(bytes(msg, encoding='ascii'))
+        self.proc.stdin.flush()
+
+    def __del__(self):
+        self.proc.communicate(b"quit", timeout = None)
 
 def init(contr):
     """ General initialization of MORSE
@@ -549,24 +559,33 @@ def init(contr):
     # Get the version of Python used
     # This is used to determine also the version of Blender
     persistantstorage.pythonVersion = sys.version_info
-    logger.info ("Python Version: %s.%s.%s" %
-                    persistantstorage.pythonVersion[:3])
-    logger.info ("Blender Version: %s.%s.%s" % morse.core.blenderapi.version())
-    logger.info  ("Python path: %s" % sys.path)
-    logger.info ("PID: %d" % os.getpid())
+    logger.info("Python Version: %s.%s.%s" % persistantstorage.pythonVersion[:3])
+    logger.info("Blender Version: %s.%s.%s" % morse.core.blenderapi.version())
+    logger.info("Python path: %s" % sys.path)
+    logger.info("PID: %d" % os.getpid())
 
     persistantstorage.morse_initialised = False
-    persistantstorage.time = TimeStrategies.make(morse.core.blenderapi.getssr()['time_management'])
-    persistantstorage.current_time = persistantstorage.time.time
+    persistantstorage.time = TimeStrategies.make(morse.core.blenderapi.getssr()['time_management'],
+                                                 morse.core.blenderapi.getssr().get('use_relative_time', False))
     # Variable to keep trac of the camera being used
     persistantstorage.current_camera_index = 0
 
     init_ok = True
     init_ok = init_ok and create_dictionaries()
 
+    persistantstorage.internal_syncer = None
+
     logger.log(SECTION, 'SUPERVISION SERVICES INITIALIZATION')
     init_ok = init_ok and init_supervision_services()
 
+    # Make sure to start the internal syncer after initialization of
+    # time_scale (done in in init_supervision_services)
+    try:
+        use_ = morse.core.blenderapi.getssr()['use_internal_syncer']
+        if use_:
+            persistantstorage.internal_syncer = MorseSyncProcess()
+    except KeyError:
+        pass
 
     logger.log(SECTION, 'SCENE INITIALIZATION')
 
@@ -641,6 +660,12 @@ def init_supervision_services():
     communication_service = Communication()
     time_service= TimeServices()
 
+    try:
+        time_scale = morse.core.blenderapi.getssr()['time_scale']
+        time_service.set_time_scale(time_scale)
+    except KeyError as e:
+        pass
+
     persistantstorage.serviceObjectDict[simulation_service.name()] = simulation_service
     persistantstorage.serviceObjectDict[communication_service.name()] = communication_service
     persistantstorage.serviceObjectDict[time_service.name()] = time_service
@@ -691,7 +716,6 @@ def simulation_main(contr):
     # Update the time variable
     try:
         persistantstorage.time.update()
-        persistantstorage.current_time = persistantstorage.time.time
     except AttributeError:
         # If the 'base_clock' variable is not defined, there probably was
         #  a problem while doing the init, so we'll abort the simulation.
@@ -726,11 +750,6 @@ def switch_camera(contr):
         next_camera = cameras[index]
         scene.active_camera = next_camera
         logger.info("Showing view from camera: '%s'" % next_camera.name)
-        # Disable mouse cursor for Human camera
-        if next_camera.name == "Human_Camera":
-            morse.core.blenderapi.mousepointer(visible = False)
-        else:
-            morse.core.blenderapi.mousepointer(visible = True)
         # Update the index for the next call
         index = (index + 1) % len(cameras)
         persistantstorage.current_camera_index = index

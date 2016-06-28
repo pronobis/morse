@@ -16,14 +16,11 @@ class Accelerometer(SensorCreator):
 class ArmaturePose(SensorCreator):
     _classpath = "morse.sensors.armature_pose.ArmaturePose"
 
-    def __init__(self, name=None):
-        SensorCreator.__init__(self, name)
+class Attitude(SensorCreator):
+    _classpath = "morse.sensors.attitude.Attitude"
 
 class Barometer(SensorCreator):
     _classpath = "morse.sensors.barometer.Barometer"
-
-    def __init__(self, name=None):
-        SensorCreator.__init__(self, name)
 
 class Battery(SensorCreator):
     _classpath = "morse.sensors.battery.Battery"
@@ -77,6 +74,9 @@ class IMU(SensorCreator):
         mesh.scale = (.04, .04, .02)
         mesh.color(.3, .9, .6)
         self.append(mesh)
+    
+class Magnetometer(SensorCreator):
+    _classpath = "morse.sensors.magnetometer.Magnetometer"
 
 class Odometry(SensorCreator):
     _classpath = "morse.sensors.odometry.Odometry"
@@ -113,9 +113,6 @@ class Proximity(SensorCreator):
 class PTUPosture(SensorCreator):
     _classpath = "morse.sensors.ptu_posture.PTUPosture"
 
-    def __init__(self, name=None):
-        SensorCreator.__init__(self, name)
-
 class SearchAndRescue(SensorCreator):
     _classpath = "morse.sensors.search_and_rescue.SearchAndRescue"
 
@@ -135,7 +132,7 @@ class SearchAndRescue(SensorCreator):
         sensor.angle = 60.0
         sensor.distance = 10.0
         sensor.use_pulse_true_level = True
-        sensor.frequency = 20
+        self._set_sensor_frequency(sensor, 20)
         sensor.property = "Injured"
         # link it to the Python controller
         controller = obj.game.controllers[-1]
@@ -483,9 +480,6 @@ class VelodyneRayCast(LaserSensorWithArc):
 class Clock(SensorCreator):
     _classpath = "morse.sensors.clock.Clock"
 
-    def __init__(self, name=None):
-        SensorCreator.__init__(self, name)
-
 class Kinect(CompoundSensor):
     """
     Microsoft Kinect RGB-D camera, implemented as a pair of depth camera and video
@@ -527,15 +521,21 @@ class Kinect(CompoundSensor):
         self.depth_camera.profile()
     def frequency(self, frequency):
         # Override AbstractComponent method
-        self.video_camera.frequency(frequency)
-        self.depth_camera.frequency(frequency)
+
+        # XXX frequency() is called in SensorCreator, while the
+        # sub-objects are not yet created. Through, it is not too bad,
+        # as the different sub-objects have specific default frequency.
+        if hasattr(self, 'video_camera'):
+            self.video_camera.frequency(frequency)
+            self.depth_camera.frequency(frequency)
 
 class Collision(SensorCreator):
     _classpath = "morse.sensors.collision.Collision"
 
     def __init__(self, name=None):
-        """ Sensor to detect objects colliding with the current object,
-        with more settings than the Touch sensor
+        """ Sensor to detect objects colliding with the current object.
+
+        Doc: https://www.blender.org/manual/game_engine/logic/sensors/collision.html
         """
         SensorCreator.__init__(self, name)
         obj = bpymorse.get_context_object()
@@ -544,28 +544,29 @@ class Collision(SensorCreator):
         obj.game.physics_type = 'SENSOR'
         # Specify a collision bounds type other than the default
         obj.game.use_collision_bounds = True
+        obj.scale = (0.02,0.02,0.02)
         # replace Always sensor by Collision sensor
         sensor = obj.game.sensors[-1]
         sensor.type = 'COLLISION'
         # need to get the new Collision Sensor object
         sensor = obj.game.sensors[-1]
         sensor.use_pulse_true_level = True # FIXME doesnt seems to have any effect
+        sensor.use_material = False # we want to filter by property, not by material
         # Component mesh (eye sugar)
         mesh = Cube("CollisionMesh")
-        mesh.scale = (.02, .02, .02)
         mesh.color(.8, .2, .1)
         self.append(mesh)
     def properties(self, **kwargs):
         SensorCreator.properties(self, **kwargs)
-        if 'collision_property' in kwargs:
+        if 'only_objects_with_property' in kwargs:
             try:
                 sensor = self._bpy_object.game.sensors[-1]
-                sensor.property = kwargs['collision_property']
+                sensor.property = kwargs['only_objects_with_property']
             except KeyError:
                 pass
 
 class RadarAltimeter(SensorCreator):
     _classpath = "morse.sensors.radar_altimeter.RadarAltimeter"
 
-    def __init__(self, name=None):
-        SensorCreator.__init__(self, name)
+class Airspeed(SensorCreator):
+    _classpath = "morse.sensors.airspeed.Airspeed"

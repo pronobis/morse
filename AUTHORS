@@ -1,5 +1,17 @@
 (as ordered by 'git shortlog -sn TAG1..TAG2')
 
+MORSE 1.4
+---------
+
+Arnaud Degroote (ISAE-SUPAERO)
+Séverin Lemaignan (EPFL then Plymouth University)
+Pierrick Koch (LAAS-CNRS)
+Lin N.Y. 
+Jeremy Nicola (ENSTA Bretagne)
+Christopher-Eyk Hrabia (DAI-Lab, Technische Universität Berlin)
+Matthieu Herrb (LAAS-CNRS)
+Harmish Khambhaita (LAAS-CNRS)
+
 MORSE 1.3
 ---------
 
@@ -11,6 +23,7 @@ Joshua G Lock (University of Lincoln)
 Simon Rohou (ENSTA Bretagne)
 Charles Lesire-Cabaniols (ONERA)
 Johannes Horvath (InMach GmbH)
+Andrzej Pronobis (University of Washington, Seattle)
 Adam YH Lee (Gumstix Research Canada)
 Christopher-Eyk Hrabia (DAI-Lab, Technische Universität Berlin)
 David Hodo (Auburn University)

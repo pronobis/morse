@@ -10,7 +10,6 @@ import struct
 from morse.testing.ros import RosTestCase
 from morse.testing.testing import testlogger
 
-import roslib
 import rospy
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
@@ -66,11 +65,12 @@ class SickLaserRosTest(RosTestCase):
             msg = rospy.wait_for_message(laser_topic, LaserScan, 10)
 
             self.assertEqual(len(msg.ranges), 181) # 180 + center ray
-            self.assertTrue (msg.ranges != old)
+            self.assertNotEqual(msg.ranges, old)
             old = msg.ranges
             # assert that : near <= distance <= far
             for distance in msg.ranges:
-                self.assertTrue(0.1 <= distance <= 30)
+                self.assertGreaterEqual(distance, 0.1)
+                self.assertLessEqual(distance, 30)
 
             time.sleep(0.2) # wait for turning
 

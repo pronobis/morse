@@ -154,9 +154,8 @@ class Supervision(AbstractObject):
                 cmpt["service_interfaces"] = services_iface[c.name()]
 
             if c.name() in simu.datastreams:
-                stream = simu.datastreams[c.name()]
-                cmpt["stream"] = stream[0]
-                cmpt["stream_interfaces"] = stream[1]
+                streams = simu.datastreams[c.name()]
+                cmpt["stream_interfaces"] = [(stream[0], stream[2]) for stream in streams]
 
             return cmpt
 
@@ -175,6 +174,7 @@ class Supervision(AbstractObject):
 
 
         details['robots'] = [robotdetails(r) for n, r in simu.robotDict.items()]
+        details['environment'] = blenderapi.getssr()['environment_file']
         return details
 
 
@@ -207,7 +207,8 @@ class Supervision(AbstractObject):
 
         scene = blenderapi.scene()
         # Special Morse items to remove from the list
-        remove_items = ['Scene_Script_Holder', 'CameraFP', '__default__cam__']
+        remove_items = ['Scene_Script_Holder', 'CameraFP', '__default__cam__',
+                        'MORSE.Properties', '__morse_dt_analyser']
         top_levelers = [o for o in scene.objects
                         if o.parent is None and
                         not o.name in remove_items]
@@ -276,6 +277,24 @@ class Supervision(AbstractObject):
         return position
 
     @service
+    def get_camarafp_position(self):
+        """ Get the CamaraFP (MORSE' environment camera) world position. [x, y, z]
+
+        :returns: The camera's world position. [x, y, z].
+        """
+        blender_object = get_obj_by_name('CameraFP')
+        return blender_object.worldPosition
+
+    @service
+    def get_camarafp_transform(self):
+        """ Get the CamaraFP (MORSE' environment camera) world space transform matrix.
+
+        :returns: The camera's world space transform matrix. 4x4 Matrix [[float]]
+        """
+        blender_object = get_obj_by_name('CameraFP')
+        return blender_object.worldTransform
+
+    @service
     def set_camarafp_transform(self, transform):
         """ Set the CamaraFP (MORSE' environment camera) world space transform matrix.
 
@@ -309,6 +328,22 @@ class Supervision(AbstractObject):
         """
         blender_object = get_obj_by_name('CameraFP')
         return [list(vec) for vec in blender_object.projection_matrix]
+
+    @service
+    def set_object_position(self, object_name, position, orientation = None):
+        """ Set the position (and optionally orientation of an object in
+            the simulation. [x, y, z]
+
+             :param position: The objects's world position. [x, y, z].
+             :type  position: list(float)
+             :param orientation: (optional) The object's world
+             orientation [roll pitch yaw] in radians
+             :type: orientation: list(float)
+        """
+        blender_object = get_obj_by_name(object_name)
+        blender_object.worldPosition = position
+        if orientation:
+            blender_object.worldOrientation = orientation
 
     def action(self):
         pass

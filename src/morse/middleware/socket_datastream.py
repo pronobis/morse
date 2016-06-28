@@ -3,6 +3,7 @@ import socket
 import select
 import json
 import errno
+import time
 from morse.core.datastream import DatastreamManager
 from morse.helpers.transformation import Transformation3d
 from morse.middleware import AbstractDatastream
@@ -167,14 +168,10 @@ class SocketDatastreamManager(DatastreamManager):
         DatastreamManager.__init__(self, args, kwargs)
 
         self.time_sync = kwargs.get('time_sync', False)
-        self.sync_port = kwargs.get('sync_port', -1)
+        self.sync_port = kwargs.get('sync_port', 6000)
 
         if self.time_sync:
-            if self.sync_port == -1:
-                logger.error("time_sync is required, but sync_port is not configured")
-                raise MorseMiddlewareError("sync_port is not configured")
-            else:
-                self._init_trigger()
+            self._init_trigger()
 
         # port -> MorseSocketServ
         self._server_dict = {}
@@ -211,6 +208,9 @@ class SocketDatastreamManager(DatastreamManager):
         if self._sync_client:
             logger.debug("Waiting trigger")
             msg = self._sync_client.recv(2048)
+            now = time.time()
+            logger.debug('Synced after %f' % (now - self._last_sync_time))
+            self._last_sync_time = now
             if not msg: #deconnection of client
                 self._sync_client = None
         else:
@@ -227,6 +227,7 @@ class SocketDatastreamManager(DatastreamManager):
 
             if self._sync_server in inputready:
                 self._sync_client, _ = self._sync_server.accept()
+                self._last_sync_time = time.time()
 
     def _end_trigger(self):
         self._sync_client.close()
@@ -262,9 +263,11 @@ class SocketDatastreamManager(DatastreamManager):
         register_success = False
         must_inc_base_port = False
 
-        if not 'port' in mw_data[2]:
+        kwargs = mw_data[3]
+
+        if not 'port' in kwargs:
             must_inc_base_port = True
-            mw_data[2]['port'] = self._base_port
+            kwargs['port'] = self._base_port
 
         while not register_success:
             try:
@@ -274,14 +277,14 @@ class SocketDatastreamManager(DatastreamManager):
                 register_success = True
             except socket.error as error_info:
                 if error_info.errno ==  errno.EADDRINUSE:
-                    mw_data[2]['port'] += 1
+                    kwargs['port'] += 1
                     if must_inc_base_port:
                         self._base_port += 1
                 else:
                     raise
 
-        self._server_dict[mw_data[2]['port']] = serv
-        self._component_nameservice[component_name] = mw_data[2]['port']
+        self._server_dict[kwargs['port']] = serv
+        self._component_nameservice[component_name] = kwargs['port']
         if must_inc_base_port:
             self._base_port += 1
 

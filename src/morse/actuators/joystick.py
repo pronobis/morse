@@ -8,6 +8,24 @@ class Joystick(Actuator):
     This actuator does not require a connection with external data. It
     simply responds to the joystick to generate movement instructions for
     the robot attached.
+
+
+    .. example::
+
+        from morse.builder import *
+
+        # adds a default robot (the MORSE mascott!)
+        robot = Morsy()
+
+        # creates a new instance of the joystick actuator
+        joystick = Joystick()
+        robot.append(keyboard)
+
+        env = Environment('empty')
+
+        # Run this simulation: you can move the robot with your joystick.
+
+    :noautoexample:
     """
 
     _name = "Joystick Actuator"
@@ -50,6 +68,8 @@ class Joystick(Actuator):
         # speed_factor = - speed / max
         self._speed_factor = - self._speed / 32767.0
 
+        self.zero_motion = True
+
         logger.info('Component initialized')
 
 
@@ -64,9 +84,20 @@ class Joystick(Actuator):
         rz = joystick_sensor.axisValues[0] * self._speed_factor
         vx = joystick_sensor.axisValues[1] * self._speed_factor
 
+        # Send a 'zero motion' only once in a row.
+        if self.zero_motion and (vx,vy,vz,rx,ry,rz) == (0,0,0,0,0,0):
+            return
+
         # Give the movement instructions directly to the parent
         # The second parameter specifies a "local" movement
         if self._type == 'Position' or self._type == 'Velocity':
             self.robot_parent.apply_speed(self._type, [vx, vy, vz], [rx, ry, rz / 2.0])
         elif self._type == 'Differential':
             self.robot_parent.apply_vw_wheels(vx, -rz)
+
+        if (vx,vy,vz,rx,ry,rz) == (0,0,0,0,0,0):
+            self.zero_motion = True
+        else:
+            self.zero_motion = False
+
+

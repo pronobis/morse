@@ -14,8 +14,33 @@ class Keyboard(Actuator):
 
     :kbd:`Up` forward
     :kbd:`Down` backwards
-    :kbd:`Left` turn left
-    :kbd:`Right` turn right
+    :kbd:`Left` turn/yaw left
+    :kbd:`Right` turn/yaw right
+    :kbd:`I` pitch forward
+    :kbd:`K` pitch backward
+    :kbd:`L` roll left
+    :kbd:`M` roll right
+    :kbd:`U` strafe left
+    :kbd:`O` strafe right
+    :kbd:`T` move up
+    :kbd:`G` move down
+
+    .. example::
+
+        from morse.builder import *
+
+        # adds a default robot (the MORSE mascott!)
+        robot = Morsy()
+
+        # creates a new instance of the actuator
+        keyboard = Keyboard()
+        robot.append(keyboard)
+
+        env = Environment('empty')
+
+        # Run this simulation: you can move the robot with the arrow keys.
+
+    :noautoexample:
     """
 
     _name = "Keyboard Actuator"
@@ -35,8 +60,10 @@ class Keyboard(Actuator):
         # Correct the speed considering the Blender clock
         if self._type == 'Position':
             self._speed = self._speed / self.frequency
-        logger.info('Component initialized')
 
+        self.zero_motion = True
+
+        logger.info('Component initialized')
 
     def default_action(self):
         """ Interpret keyboard presses and assign them to movement
@@ -48,21 +75,67 @@ class Keyboard(Actuator):
         vx, vy, vz = 0.0, 0.0, 0.0
         rx, ry, rz = 0.0, 0.0, 0.0
 
+        # move forward
         if keyboard.events[blenderapi.UPARROWKEY] == is_actived:
             vx = self._speed
 
+        # move backward
         if keyboard.events[blenderapi.DOWNARROWKEY] == is_actived:
             vx = -self._speed
 
+        # turn left
         if keyboard.events[blenderapi.LEFTARROWKEY] == is_actived:
             rz = self._speed
 
+        # turn right
         if keyboard.events[blenderapi.RIGHTARROWKEY] == is_actived:
             rz = -self._speed
+
+        # move up
+        if keyboard.events[blenderapi.TKEY] == is_actived:
+            vz = self._speed
+
+        # move down
+        if keyboard.events[blenderapi.GKEY] == is_actived:
+            vz = -self._speed
+
+        # strafe left
+        if keyboard.events[blenderapi.UKEY] == is_actived:
+            vy = self._speed
+
+        # strafe right
+        if keyboard.events[blenderapi.OKEY] == is_actived:
+            vy = -self._speed
+
+        # roll left
+        if keyboard.events[blenderapi.JKEY] == is_actived:
+            rx = -self._speed
+
+        # roll right
+        if keyboard.events[blenderapi.LKEY] == is_actived:
+            rx = self._speed
+
+        # pitch forward
+        if keyboard.events[blenderapi.IKEY] == is_actived:
+            ry = self._speed
+
+        # pitch backward
+        if keyboard.events[blenderapi.KKEY] == is_actived:
+            ry = -self._speed
+
+        # Send a 'zero motion' only once in a row.
+        if self.zero_motion and (vx,vy,vz,rx,ry,rz) == (0,0,0,0,0,0):
+            return
 
         if self._type == 'Position' or self._type == 'Velocity':
             self.robot_parent.apply_speed(self._type, [vx, vy, vz], [rx, ry, rz / 2.0])
         elif self._type == 'Differential':
             self.robot_parent.apply_vw_wheels(vx, rz)
+
+
+        if (vx,vy,vz,rx,ry,rz) == (0,0,0,0,0,0):
+            self.zero_motion = True
+        else:
+            self.zero_motion = False
 
 

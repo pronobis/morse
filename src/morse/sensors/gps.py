@@ -4,6 +4,8 @@ from morse.helpers.components import add_property, add_data, add_level
 import math, time
 from morse.core import mathutils
 from morse.core import blenderapi
+from morse.helpers.coordinates import CoordinateConverter
+import numpy
 
 class GPS(morse.core.sensor.Sensor):
     """
@@ -18,6 +20,17 @@ class GPS(morse.core.sensor.Sensor):
 
     The "heading" is Clockwise (mathematically negative).
 
+    .. warning::
+
+        To work properly in "raw" and "extented" mode, you need to
+        configure the following variables at the environment level:
+            - **longitude** in degrees (double) of Blender origin
+            - **latitude** in degrees (double) of Blender origin
+            - **altitude** in m  of the Blender origin
+            - optionnaly **angle_against_north** in degrees is the angle
+              between geographic north and the blender X axis.
+              **angle_against_north** is positive when the blender X-axis is
+              east of true north, and negative when it is to the west.
 
     Conversion of Geodetic coordinates into ECEF-r, LTP into ECEF-r and vice versa
     ------------------------------------------------------------------------------
@@ -119,7 +132,7 @@ class GPS(morse.core.sensor.Sensor):
     add_data('altitude', 0.0, "double",
              'altitude in m a.s.l.', level = ["raw", "extended"])
     add_data('velocity', [0.0, 0.0, 0.0], "vec3<float>",
-             'Instantaneous speed in X, Y, Z, in meter sec^-1', level = ["raw", "extended"])
+             'Instantaneous speed along East, North, Up in meter sec^-1', level = ["raw", "extended"])
     add_data('date', 0000000, "DDMMYY",
              'current date in DDMMYY-format', level = "extended")
     add_data('time', 000000, "HHMMSS",
@@ -128,13 +141,6 @@ class GPS(morse.core.sensor.Sensor):
              'heading in degrees [0°,360°] to geographic north',
              level = "extended")
 
-    add_property('longitude', 0.0, 'longitude', 'double',
-                 'longitude in degree [-180°,180°] or [0°,360°] of the \
-                  Blender origin')
-    add_property('latitude', 0.0, 'latitude', 'double',
-             'latitude in degree [-90°,90°] of the Blender origin')
-    add_property('altitude', 0.0, 'altitude', 'double',
-             'altitude in m a.s.l. of the Blender origin')
 
     def __init__(self, obj, parent=None):
         """ Constructor method.
@@ -175,20 +181,11 @@ class RawGPS(GPS):
         # Call the constructor of the parent class
         GPS.__init__(self, obj, parent)
         
-        ##copied from accelerometer
-        # Variables to store the previous position
-        self.ppx = 0.0
-        self.ppy = 0.0
-        self.ppz = 0.0
-        # Variables to store the previous velocity
-        self.pvx = 0.0
-        self.pvy = 0.0
-        self.pvz = 0.0
-        # Make a new reference to the sensor position
-        self.p = self.bge_object.position
-        self.v = [0.0, 0.0, 0.0] # Velocity
-        self.pv = [0.0, 0.0, 0.0] # Previous Velocity
+        # Variables to store the previous LTP position
+        self.pltp = None
+        self.v = [0.0, 0.0, 0.0]
 
+        self.coord_converter = CoordinateConverter.instance()
     
     def default_action(self):
         """
@@ -207,120 +204,19 @@ class RawGPS(GPS):
           http://www.lsgi.polyu.edu.hk/staff/zl.li/Vol_5_2/09-baki-3.pdf
         """
 
-        ####
-        #Speed
-        ####
-        ##copied from accelerometer
-        # Compute the difference in positions with the previous loop
-        self.dx = self.p[0] - self.ppx
-        self.dy = self.p[1] - self.ppy
-        self.dz = self.p[2] - self.ppz
-
-        # Store the position in this instant
-        self.ppx = self.p[0]
-        self.ppy = self.p[1]
-        self.ppz = self.p[2]
-
-        # Scale the speeds to the time used by Blender
-        self.v[0] = self.dx * self.frequency
-        self.v[1] = self.dy * self.frequency
-        self.v[2] = self.dz * self.frequency
-
-        # Update the data for the velocity
-        self.pvx = self.v[0]
-        self.pvy = self.v[1]
-        self.pvz = self.v[2]
-
-
-        ####
-        #GPS
-        ####
-
-        ####
-        #constants in calculations
-        #a: WGS-84 Earth semimajor axis
-        #ecc: first eccentricity
-        ####
-        a  = float(6378137)
-        ecc = 8.181919191e-2
-
-        def convert_GPS_to_ECEF(P):
-            """
-            converts gps-data(radians) to ECEF-r coordinates
-            """
-            N = a/math.sqrt(1-(ecc**2*(math.sin(P[1])**2)))
-            h = P[2]
-            x0 = [ (h + N)*math.cos(P[1])*math.cos(P[0]),
-                   (h + N)*math.cos(P[1])*math.sin(P[0]),
-                   (h + (1 - ecc**2) * N)*math.sin(P[1])]
-            return x0
-
-        def convert_LTP_to_ECEF(P):
-            """
-            converts point in LTP(Blender) to ECEF-r coordinates
-            """
-            x0 = convert_GPS_to_ECEF(P) #P->x0
-            x0 = mathutils.Vector(x0)
-            transform_matrix = [[-math.sin(P[0]), math.cos(P[0]), 0],
-               [-math.cos(P[0]) * math.sin(P[1]), 
-                -math.sin(P[1])*math.sin(P[0]), math.cos(P[1])],
-               [math.cos(P[1])*math.cos(P[0]), math.cos(P[1])*math.sin(P[0]), math.sin(P[1])]]
-            transform_matrix = mathutils.Matrix(transform_matrix)
-            transform_matrix.invert()
-            xe = x0 + transform_matrix*xt  #transformed xt -> xe
-            return xe
-
-        def vermeille_method(xe):
-            """
-            converts point in ECEF-r coordinates into Geodetic (GPS) via
-            Vermeille's method
-            """
-            #"just intermediary parameters" see FoIz
-            p = (xe[0]**2+xe[1]**2)/a**2
-            q = (1-ecc**2)/a**2*xe[2]**2
-            r = (p+q-ecc**4)/6
-            s = ecc**4 * (p*q)/(4*r**3)
-            t = (1+s+math.sqrt(s*(2+s)))**(1/3.0)
-            u = r*(1+t+1/t)
-            v = math.sqrt(u**2+(ecc**4*q))
-            w = ecc**2*((u+v-q)/(2*v))
-            k = math.sqrt(u+v+w**2)-w
-            D = (k*(math.sqrt(xe[0]**2+xe[1]**2)))/(k+ecc**2)
-            gps_coords = [2*math.atan(xe[1]/(xe[0]+(math.sqrt(xe[0]**2+xe[1]**2)))),
-                          2*math.atan(xe[2]/(D+math.sqrt(D**2+xe[2]**2))),
-                         ((k+ecc**2-1)/k)*math.sqrt(D**2+xe[2]**2)]
-            return gps_coords
-
-        #P -> Blender origin in Geodetic coordinates
-        P = [self.longitude, self.latitude, self.altitude]
-
         #current position
-        xt = self.position_3d.translation
-        xt = mathutils.Vector(xt)
-
-        #P (in degrees) to radians
-        for i in range(len(P)-1):
-            P[i] = math.radians(P[i])
-
-        ####
-        #GPS -> ECEF-r
-        ####
-        xe = convert_LTP_to_ECEF(P)
-
-        ####
-        #ECEF-r -> GPS
-        ####
-        gps_coords = vermeille_method(xe)
-
-        #gps_coords (in radians) to degrees
-        for i in range(len(gps_coords)-1):
-            gps_coords[i] = math.degrees(gps_coords[i])
-
+        xt = numpy.matrix(self.position_3d.translation)
+        ltp = self.coord_converter.blender_to_ltp(xt)
+        if self.pltp is not None:
+            v = (ltp - self.pltp) * self.frequency
+            self.v = [v[0, 0], v[0, 1], v[0, 2]]
+        self.pltp = ltp
+        gps_coords = self.coord_converter.ltp_to_geodetic(ltp)
 
         #compose message as close as possible to a GPS-standardprotocol
-        self.local_data['longitude'] = gps_coords[0]
-        self.local_data['latitude'] = gps_coords[1]
-        self.local_data['altitude'] = gps_coords[2]
+        self.local_data['longitude'] = math.degrees(gps_coords[0, 0])
+        self.local_data['latitude'] = math.degrees(gps_coords[0, 1])
+        self.local_data['altitude'] = gps_coords[0, 2]
         self.local_data['velocity'] = self.v
 
 class ExtendedGPS(RawGPS):
@@ -344,11 +240,15 @@ class ExtendedGPS(RawGPS):
         """
         # Call the default_action of the parent class
         RawGPS.default_action(self)
-        current_time = time.gmtime(blenderapi.persistantstorage().current_time)
+        current_time = time.gmtime(blenderapi.persistantstorage().time.time)
         date = time.strftime("%d%m%y", current_time)
         time_h_m_s = time.strftime("%H%M%S", current_time)
-        heading = (2*math.pi - math.atan2(self.dy, self.dx) + math.pi/2)%(2*math.pi)
+        if abs(self.v[0]) < 1e-6 and abs(self.v[1]) < 1e-6:
+            # Not observable if we do not move
+            self.local_data['heading'] = float("inf")
+        else:
+            heading = self.coord_converter.angle_against_geographic_north(self.position_3d.euler)
+            self.local_data['heading'] = math.degrees(heading)
         self.local_data['date'] = date
         self.local_data['time'] = time_h_m_s   
-        self.local_data['heading'] = math.degrees(heading)
 

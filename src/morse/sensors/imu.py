@@ -3,6 +3,9 @@ import math
 import morse.core.sensor
 from morse.core import mathutils, blenderapi
 from morse.helpers.components import add_data, add_property
+from morse.sensors.magnetometer import MagnetoDriver
+from morse.helpers.velocity import linear_velocities, angular_velocities
+from copy import copy
 
 """
 Important note:
@@ -17,6 +20,8 @@ class IMU(morse.core.sensor.Sensor):
     This sensor emulates an Inertial Measurement Unit (IMU), measuring
     the angular velocity and linear acceleration including acceleration
     due to gravity.
+    For the magnetic field part, refer to the documentation of
+    :doc:`./magnetometer`.
 
     If the robot has a physics controller, the velocities are directly
     read from it's properties ``localAngularVelocity`` and
@@ -33,6 +38,8 @@ class IMU(morse.core.sensor.Sensor):
              'rates in IMU x, y, z axes (in radian . sec ^ -1)')
     add_data('linear_acceleration', [0.0, 0.0, 0.0], "vec3<float>",
              'acceleration in IMU x, y, z axes (in m . sec ^ -2)')
+    add_data('magnetic_field', [0.0, 0.0, 0.0], "vec3<float>",
+             'magnetic field along x, y, z axes (in nT)')
     add_property('_type', 'Automatic', 'ComputationMode', 'string',
                  "Kind of computation, can be one of ['Velocity', 'Position']. "
                  "Only robot with dynamic and Velocity control can choose Velocity "
@@ -66,12 +73,7 @@ class IMU(morse.core.sensor.Sensor):
             self.robot_w = self.robot_parent.bge_object.localAngularVelocity
             self.robot_vel = self.robot_parent.bge_object.worldLinearVelocity
         else:
-            # reference to sensor position
-            self.pos = self.bge_object.worldPosition
-            # previous position
-            self.pp = self.pos.copy()
-            # previous attitude euler angles as vector
-            self.patt = mathutils.Vector(self.position_3d.euler)
+            self.pp = copy(self.position_3d)
 
         # previous linear velocity
         self.plv = mathutils.Vector((0.0, 0.0, 0.0))
@@ -95,6 +97,8 @@ class IMU(morse.core.sensor.Sensor):
         # reference for rotating a vector from imu frame to world frame
         self.rot_i2w = self.bge_object.worldOrientation
 
+        self.mag = MagnetoDriver()
+
         logger.info("IMU Component initialized, runs at %.2f Hz ", self.frequency)
 
     def sim_imu_simple(self):
@@ -102,9 +106,8 @@ class IMU(morse.core.sensor.Sensor):
         Simulate angular velocity and linear acceleration measurements via simple differences.
         """
         # linear and angular velocities
-        lin_vel = (self.pos - self.pp) * self.frequency
-        att = mathutils.Vector(self.position_3d.euler)
-        ang_vel = (att - self.patt) * self.frequency
+        lin_vel = linear_velocities(self.pp, self.position_3d, 1 / self.frequency)
+        ang_vel = angular_velocities(self.pp, self.position_3d, 1 / self.frequency)
 
         # linear acceleration in imu frame
         dv_imu = self.rot_i2w.transposed() * (lin_vel - self.plv) * self.frequency
@@ -113,8 +116,8 @@ class IMU(morse.core.sensor.Sensor):
         accel_meas = dv_imu + self.rot_i2w.transposed() * self.gravity
 
         # save current position and attitude for next step
-        self.pp = self.pos.copy()
-        self.patt = att
+        self.pp = copy(self.position_3d)
+
         # save velocity for next step
         self.plv = lin_vel
         self.pav = ang_vel
@@ -172,3 +175,4 @@ class IMU(morse.core.sensor.Sensor):
         # Store the important data
         self.local_data['angular_velocity'] = rates
         self.local_data['linear_acceleration'] = accel
+        self.local_data['magnetic_field'] = self.mag.compute(self.position_3d)

@@ -1,5 +1,4 @@
 import logging; logger = logging.getLogger("morse." + __name__)
-import roslib; roslib.load_manifest('geometry_msgs')
 from geometry_msgs.msg import Pose, PoseStamped, PoseWithCovarianceStamped, Vector3, Quaternion
 from morse.middleware.ros import ROSPublisher, ROSPublisherTF, mathutils
 
@@ -52,7 +51,7 @@ def get_pose(self):
 
 class PosePublisher(ROSPublisher):
     """ Publish the position and orientation of the robot as
-    ROS geomeetry_msgs.Pose message.
+    ROS geometry_msgs.Pose message.
     """
     ros_class = Pose
 

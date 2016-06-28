@@ -2,12 +2,28 @@ import logging; logger = logging.getLogger("morse." + __name__)
 from morse.core import blenderapi
 from morse.robots.grasping_robot import GraspingRobot
 from morse.core.services import service
+from morse.helpers.components import add_property
 
 class Human(GraspingRobot):
-    """ Class definition for the human as a robot entity.
-
-    Sub class of GraspingRobot.
     """
+    MORSE allows the simulation of humans: you can add a human model in your
+    scene, you can control it like any other robot (including from the keyboard
+    or via external scripts), and export from your simulation various data like
+    the full body pose.
+
+    The human is managed by MORSE as a regular robot, which means it can have
+    sensors and actuators attached to it.
+
+    For a general introduction to human-robot interaction simulation with MORSE,
+    check the :doc:`HRI main page <../../hri>`.
+
+    """
+
+    _name = "Human avatar"
+
+    add_property('_animations', True, 'Animations', 'bool', "If "
+            "true (default), will enable various animations like"
+            " the walk cycle animation.")
 
     def __init__(self, obj, parent=None):
         """ Call the constructor of the parent class """
@@ -15,80 +31,62 @@ class Human(GraspingRobot):
         GraspingRobot.__init__(self, obj, parent)
 
         # We define here the name of the human grasping hand:
-        self.hand_name = 'Hand_Grab.R'
+        #self.hand_name = 'Hand_Grab.R'
+
+        armatures = blenderapi.get_armatures(self.bge_object)
+        if len(armatures) == 0:
+            logger.error("The human <%s> has not armature. Something is wrong!" % obj.name)
+            return
+        if len(armatures) > 1:
+            logger.warning("The human <%s> has more than one armature. Using the first one" % obj.name)
+
+        self.armature = armatures[0]
 
         logger.info('Component initialized')
 
-    @service
-    def move(self, speed, rotation):
-        """ Move the human. """
+        self.warnedAboutControlType = False
 
-        human = self.bge_object
+    def apply_speed(self, kind, linear_speed, angular_speed):
+        """
+        Apply speed parameter to the human.
 
-        if not human['Manipulate']:
-            human.applyMovement( [speed,0,0], True )
-            human.applyRotation( [0,0,rotation], True )
-        else:
-            scene = blenderapi.scene()
-            target = scene.objects['IK_Target_Empty.R']
+        This overloaded version of Robot.apply_speed manage the walk/rest
+        animations of the human avatar.
 
-            target.applyMovement([0.0, rotation, 0.0], True)
-            target.applyMovement([0.0, 0.0, -speed], True)
-
-    @service
-    def move_head(self, pan, tilt):
-        """ Move the human head. """
-
-        human = self.bge_object
-        scene = blenderapi.scene()
-        target = scene.objects['Target_Empty']
-
-        if human['Manipulate']:
-            return
-
-        target.applyMovement([0.0, pan, 0.0], True)
-        target.applyMovement([0.0, 0.0, tilt], True)
-
-    @service
-    def move_hand(self, diff, tilt):
-        """ Move the human hand (wheel).
-
-        A request to use by a socket.
-        Done for wiimote remote control.
+        :param string kind: not used. Forced to 'Position' control for now.
+        :param list linear_speed: the list of linear speed to apply, for
+        each axis, in m/s.
+        :param list angular_speed: the list of angular speed to apply,
+        for each axis, in rad/s.
         """
 
-        human = self.bge_object
-        if human['Manipulate']:
-            scene = blenderapi.scene()
-            target = scene.objects['IK_Target_Empty.R']
-            target.applyMovement([diff, 0.0, 0.0], True)  
-        
-    @service
-    def toggle_manipulation(self):
-        """ Change from and to manipulation mode.
+        # TODO: adjust this value depending on linear_speed to avoid 'slipping'
+        speed_factor = 1.0
 
-        A request to use by a socket.
-        Done for wiimote remote control.
-        """
+        # start/end frames of walk cycle in human_rig.blend
+        # TODO: get that automatically from the timeline?
+        WALK_START_FRAME = 9
+        WALK_END_FRAME = 32
 
-        human = self.bge_object
-        scene = blenderapi.scene()
-        hand_target = scene.objects['IK_Target_Empty.R']
-        head_target = scene.objects['Target_Empty']
+        if self._animations:
+            if linear_speed[0] != 0 or angular_speed[2] != 0:
+                self.armature.playAction("walk", 
+                                        WALK_START_FRAME, WALK_END_FRAME, 
+                                        speed=speed_factor)
+            else:
+                self.armature.playAction("walk", 
+                                        WALK_START_FRAME, WALK_START_FRAME)
 
-        if human['Manipulate']:
-            human['Manipulate'] = False
-            # Place the hand beside the body
-            hand_target.localPosition = [0.0, -0.3, 0.8]
-            head_target.setParent(human)
-            head_target.localPosition = [1.3, 0.0, 1.7]
+
+        if kind != 'Position':
+            if not self.warnedAboutControlType:
+                logger.error("Only the control type 'Position' is currently supported "
+                            "by the human avatar! You need to configure accordingly"
+                            " your motion actuator (for example, "
+                            "\"motion.properties(ControlType='Position')\")")
+                self.warnedAboutControlType = True
         else:
-            human['Manipulate'] = True
-            head_target.setParent(hand_target)
-            # Place the hand in a nice position
-            hand_target.localPosition = [0.6, 0.0, 1.4]
-            # Place the head in the same place
-            head_target.localPosition = [0.0, 0.0, 0.0]
+            GraspingRobot.apply_speed(self, 'Position', linear_speed, angular_speed)
 
     def default_action(self):
         """ Main function of this component. """

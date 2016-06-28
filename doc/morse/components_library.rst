@@ -42,9 +42,8 @@ Actuators
 
     user/actuators/*
 
-
-Other components
-++++++++++++++++
+Other special components
+++++++++++++++++++++++++
 
 .. gallery:: others
 
@@ -53,6 +52,17 @@ Other components
     :maxdepth: 1
 
     user/others/*
+
+
+Environments
+++++++++++++
+
+.. image:: ../media/environments/outdoors.jpg
+  :align: center
+
+While you can easily create your own (any Blender scene will do!), MORSE also
+provides :doc:`a set of 3D environments <environments>` for your simulations.
+
 
 Working with components
 -----------------------

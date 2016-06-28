@@ -9,13 +9,17 @@ echo -e "#! /bin/sh\nblender -setaudio NULL \$@" > blender
 chmod +x blender
 export MORSE_BLENDER=$(pwd)/blender
 
-export PYTHONPATH=$PYTHONPATH:/usr/local/lib/python3/dist-packages
+MORSE_PREFIX=~/morse_install
+
+mkdir -p ${MORSE_PREFIX}
 
 echo "Build and install MORSE"
 mkdir build && cd build
-cmake -DPYTHON_EXECUTABLE=/usr/bin/python3.4 -DPYMORSE_SUPPORT=ON ..
-make
-sudo make install
+cmake -DPYTHON_EXECUTABLE=$(which python3.4) -DCMAKE_INSTALL_PREFIX=${MORSE_PREFIX} ..
+make install
+
+export PATH=${PATH}:${MORSE_PREFIX}/bin
+export PYTHONPATH=${MORSE_PREFIX}/lib/python3/dist-packages:$PYTHONPATH
 
 morse_test() {
     echo "Run $1"

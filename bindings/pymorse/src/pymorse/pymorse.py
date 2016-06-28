@@ -295,6 +295,7 @@ import json
 import logging
 import asyncore
 import threading
+import re
 
 from .future import MorseExecutor
 from .stream import Stream, StreamJSON, PollThread
@@ -319,26 +320,40 @@ class MorseServicePreempted(Exception):
     """ Morse Service Exception thrown when preempted error """
 
 
-class Component():
+class Component(object):
     def __init__(self, morse, name, fqn, stream = None, port = None, services = []):
         self._morse = morse
         self.name = name
         self.fqn = fqn # fully qualified name
+        
+        self.stream = None
+        self._init = False
+        self._port = port
+        if not stream:
+            self._stream_dir = set()
+        else:
+            self._stream_dir = set([s[1] for s in stream])
 
-        if port:
-            self.stream = StreamJSON(morse.host, port)
+        for service in services:
+            logger.debug("Adding service %s to component %s" % (service, self.name))
+            self._add_service(service)
 
-            if stream == 'IN':
+    def lazy_init(self):
+        if self._init:
+            return
+
+        if self._port:
+            self.stream = StreamJSON(self._morse.host, self._port)
+
+            if 'IN' in self._stream_dir:
                 self.publish = self.stream.publish
-            elif stream == 'OUT':
+            if 'OUT' in self._stream_dir:
                 self.get = self.stream.get
                 self.last = self.stream.last
                 self.subscribe = self.stream.subscribe
                 self.unsubscribe = self.stream.unsubscribe
 
-        for service in services:
-            logger.debug("Adding service %s to component %s" % (service, self.name))
-            self._add_service(service)
+        self._init = True
 
     def _add_service(self, method):
         def innermethod(*args):
@@ -354,17 +369,28 @@ class Component():
         innermethod.__name__ = str(method)
         setattr(self, innermethod.__name__, innermethod)
 
+    def __getattribute__(self, name):
+        comp = object.__getattribute__(self, name)
+        if hasattr(comp, 'lazy_init'):
+            comp.lazy_init()
+        return comp
+
     def close(self):
         if self.stream:
             self.stream.close()
 
 class Robot(dict, Component):
-    __getattr__ = dict.__getitem__
     __setattr__ = dict.__setitem__
     __delattr__ = dict.__delitem__
 
     def __init__(self, morse, name, fqn, services = []):
         Component.__init__(self, morse, name, fqn, None, None, services)
+
+    def __getattr__(self, name):
+        comp = dict.__getitem__(self, name)
+        if hasattr(comp, 'lazy_init'):
+            comp.lazy_init()
+        return comp
 
 def normalize_name(name):
     """Normalize Blender names to get valid Python identifiers"""
@@ -481,8 +507,26 @@ class Morse(object):
             for component in sorted(components.keys()):
                 self._add_component(robot, component, components[component])
 
+        # Handle robots created in loop. Basically, consider robot where
+        # name match the pattern 'robot_XXX' and puts them in a list
+        # called 'robots', allowing to iterate easily on them
+        robot_names = self.robots[:]
+        robot_names.sort()
+        while robot_names:
+            name = robot_names.pop(0)
+            regexp_name = "^" + name + "_[0-9]{3}$"
+            regexp = re.compile(regexp_name)
+            loop_name = [name for name in robot_names if regexp.match(name)]
+            if loop_name:
+                list_robots = []
+                list_robots.append(getattr(self, name))
+                for _name in loop_name:
+                    list_robots.append(getattr(self, _name))
+                    robot_names.remove(_name)
+                setattr(self, name + "s", list_robots)
+
     def _add_component(self, robot, fqn, details):
-        stream = details.get('stream', None)
+        stream = details.get('stream_interfaces', None)
         port = None
         if stream:
             try:
@@ -553,7 +597,8 @@ class Morse(object):
                 self.simulator_service.publish(raw)
                 # if self.is_up() and response_callback.condition.wait(timeout):
                 # XXX Python 3.2.2 is_up() returns False when connecting...
-                if response_callback.condition.wait(timeout):
+                response_callback.condition.wait(timeout)
+                if response_callback.response:
                     return rpc_get_result(response_callback.response)
         finally:
             self.simulator_service.unsubscribe(response_callback.callback)

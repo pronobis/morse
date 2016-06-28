@@ -73,9 +73,10 @@ documented.
 Integration in your workflow
 ----------------------------
 
-MORSE do not make any assumption on your architecture. MORSE currently supports
-**4 open-source middlewares (ROS, YARP, Pocolibs and MOOS)**. :doc:`Check here
-the exact list of features supported for each middleware <user/integration>`.
+MORSE do not make any assumption on your architecture. MORSE currently
+supports **6 open-source middlewares (ROS, YARP, Pocolibs, MOOS, HLA and
+Mavlink)**. :doc:`Check here the exact list of features supported for each
+middleware <user/integration>`.
 
 It also supports a **simple socket-based protocol** for easy integration in
 other languages/toolbox. **Complete bindings for Python** are provided.
@@ -96,7 +97,7 @@ Performances
 MORSE is able to handle dozen of robots in a single environment as long as
 cameras are not simulated (because of bandwidth limitation).
 
-For instance, MORSE running on an Opteron quadcore 2GHz, in headless mode (i.e.
+For instance, MORSE running on an Opteron quadcore 2GHz, in :doc:`headless mode <headless>` (i.e.
 **without 3D acceleration**), can simulate:
 
 - one robot with a pose sensor at 250Hz

@@ -5,7 +5,7 @@ import copy
 
 from morse.builder import bpymorse
 from morse.builder.data import *
-from morse.core.exceptions import MorseBuilderUnexportableError
+from morse.core.exceptions import MorseBuilderUnexportableError, MorseBuilderError
 
 from morse.helpers.loading import get_class, load_module_attribute
 
@@ -15,6 +15,7 @@ class Configuration(object):
     modifier = {}
     service = {}
     overlay = {}
+    frequency = {}
 
     def link_datastream(component, datastream_cfg):
         Configuration.datastream.setdefault(component.name, []).append(datastream_cfg)
@@ -34,6 +35,7 @@ class Configuration(object):
         Configuration._update_name(old_name, new_name, Configuration.datastream)
         Configuration._update_name(old_name, new_name, Configuration.modifier)
         Configuration._update_name(old_name, new_name, Configuration.service)
+        Configuration._update_name(old_name, new_name, Configuration.frequency)
         for k,v in Configuration.overlay.items():
             Configuration._update_name(old_name, new_name, v)
 
@@ -71,6 +73,20 @@ class Configuration(object):
                     return True
         except KeyError:
             return False
+
+    def set_frequency(component, freq):
+        Configuration.frequency[component.name] = freq
+
+    def max_frequency():
+        """ Returns the highest update frequency requested in the
+        Builder script for any component (via component.frequency(...)).
+        If no specific frequency has been set, returns MORSE's default
+        (60Hz) """
+        values = Configuration.frequency.values()
+        if not values:
+            return 60
+        else:
+            return max(values)
 
     def _remove_entries(dict_, robot_list):
         if robot_list is None:
@@ -131,16 +147,26 @@ class AbstractComponent(object):
             obj.hide = False
         self._bpy_object = obj # bpy object
 
-    def append(self, obj, level=1):
+    def append(self, obj, child = None, level=1):
         """ Add a child to the current object
 
         Add the object given as an argument as a child of this object. The
         argument is an instance to another component. This method is generally
         used to add components to a robot.
         *e.g.*, : robot.append(sensor), will set the robot parent of the sensor.
+
+        If child is not None, the object will be parented to the named
+        child of self instead of the root of self.
         """
         obj._bpy_object.matrix_parent_inverse.identity()
-        obj._bpy_object.parent = self._bpy_object
+        if child:
+            _child = self.get_child(child)
+            if _child:
+                obj._bpy_object.parent = _child
+            else:
+                raise MorseBuilderError("No such child %s" % child)
+        else:
+            obj._bpy_object.parent = self._bpy_object
         obj.parent = self
         self.children.append(obj)
 
@@ -303,7 +329,24 @@ class AbstractComponent(object):
 
         return None
 
-    def add_stream(self, datastream, method=None, path=None, classpath=None, direction = None, **kwargs):
+    def _compute_direction(self, classpath):
+        klass = get_class(classpath)
+
+        from morse.core.actuator import Actuator
+        from morse.core.sensor import Sensor
+
+        if klass:
+            if issubclass(klass, Actuator):
+                return 'IN'
+            elif issubclass(klass, Sensor):
+                return 'OUT'
+            else:
+                logger.error("%s: no direction is precised nor can be "
+                        "computed automatically." % classpath)
+                return None
+
+
+    def add_stream(self, datastream, method=None, path=None, classpath=None, direction=None, **kwargs):
         """ Add a data stream interface to the component
 
         Do the binding between a component and the method to export/import its
@@ -336,15 +379,20 @@ class AbstractComponent(object):
 
         level = self.property_value("abstraction_level") or "default"
 
+        if not direction:
+            direction = self._compute_direction(classpath)
+            if not direction: 
+                return
+
         config = []
         # Configure the datastream for this component
         if not method:
             if not classpath in MORSE_DATASTREAM_DICT:
+                klass = get_class(classpath)
 
-                # Check if we can use default interface...
                 from morse.core.actuator import Actuator
                 from morse.core.sensor import Sensor
-                klass = get_class(classpath)
+                # Check if we can use default interface...
                 if klass and \
                    issubclass(klass, Actuator) and \
                    datastream in INTERFACE_DEFAULT_IN:
@@ -445,7 +493,9 @@ class AbstractComponent(object):
         else:
             datastream_classpath = datastream
 
+
         config.insert(0, datastream_classpath)
+        config.append(direction)
         config.append(kwargs) # append additional configuration (eg. topic name)
         Configuration.link_datastream(self, config)
 
@@ -471,14 +521,19 @@ class AbstractComponent(object):
         if self._exportable:
             self.add_stream(interface, **kwargs)
 
-    def alter(self, modifier_name=None, classpath=None, **kwargs):
+    def alter(self, modifier_name=None, classpath=None, direction=None, **kwargs):
         """ Add a modifier specified by its first argument to the component """
         # Configure the modifier for this component
         config = []
+        obj_classpath = self.property_value('classpath')
+        if not direction:
+            direction = self._compute_direction(obj_classpath)
+            if not direction:
+                return
         if not classpath:
-            obj_classpath = self.property_value('classpath')
             classpath = MORSE_MODIFIER_DICT[modifier_name][obj_classpath]
         config.append(classpath)
+        config.append(direction)
         config.append(kwargs)
         Configuration.link_modifier(self, config)
 
@@ -502,34 +557,21 @@ class AbstractComponent(object):
         """
         self.properties(abstraction_level = level)
 
-    def frequency(self, frequency=None, delay=0):
+    def _set_sensor_frequency(self, sensor, delay):
+        if bpymorse.version() >= (2, 74, 5):
+            sensor.tick_skip = delay
+        else:
+            sensor.frequency = delay
+
+    def frequency(self, frequency=None):
         """ Set the frequency of the Python module
 
         :param frequency: (int) Desired frequency,
             0 < frequency < logic tics
-        :param delay: (int) Delay between repeated pulses
-            (in logic tics, 0 = no delay)
-            if frequency is set, delay is obtained by fps / frequency.
         """
         if frequency:
-            delay = max(0, bpymorse.get_fps() // frequency - 1)
-        sensors = [s for s in self._bpy_object.game.sensors if s.type == 'ALWAYS']
-        # New MORSE_LOGIC sensor, see AbstractComponent.morseable() bellow
-        morselogic = [s for s in sensors if s.name.startswith('MORSE_LOGIC')]
-        if len(morselogic) > 1:
-            logger.warning(self.name + " has too many MORSE_LOGIC sensors to "+\
-                    "tune its frequency, change it through Blender")
-        elif len(morselogic) > 0:
-            morselogic[0].frequency = delay
-        # Backward compatible (some actuators got special logic)
-        elif len(sensors) > 1:
-            logger.warning(self.name + " has too many Game Logic sensors to "+\
-                    "tune its frequency, change it through Blender")
-        elif len(sensors) > 0:
-            sensors[0].frequency = delay
-        else:
-            logger.warning(self.name + " has no 'ALWAYS' Game Logic sensor. "+\
-                           "Unable to tune its frequency.")
+            Configuration.set_frequency(self, frequency)
+            self.properties(frequency = frequency)
 
     def is_morseable(self):
         for sensor in self._bpy_object.game.sensors:
@@ -574,38 +616,12 @@ class AbstractComponent(object):
         controller.module = calling_module
         controller.link(sensor = sensor)
 
-    def append_meshes(self, objects=None, component=None, prefix=None):
-        """ Append the objects to the scene
-
-        The ``objects`` are located either in:
-        MORSE_COMPONENTS/``self._category``/``component``.blend/Object/
-        or in: MORSE_RESOURCE_PATH/``component``/Object/
-
-        If `component` is not set (neither as argument of `append_meshes` nor
-        through the :py:class:`AbstractComponent` constructor), a Blender
-        `Empty` is created instead.
-
-        :param objects: list of the objects names to append
-        :param component: component in which the objects are located
-        :param prefix: filter the objects names to append (used by PassiveObject)
-        :return: list of the imported (selected) Blender objects
-        """
-
-
-        component = component or self._blender_filename
-
-        if not component: # no Blender resource: simply create an empty
-            bpymorse.deselect_all()
-            bpymorse.add_morse_empty()
-            return [bpymorse.get_first_selected_object(),]
-
-
+    def _compute_filepath(self, component):
         if component.endswith('.blend'):
             filepath = os.path.abspath(component) # external blend file
         else:
             filepath = os.path.join(MORSE_COMPONENTS, self._category,
                                     component + '.blend')
-
         looked_dirs = [filepath]
 
         if not os.path.exists(filepath):
@@ -628,14 +644,60 @@ class AbstractComponent(object):
                              "or default path, typically $PREFIX/share/morse/data)."% (component, looked_dirs))
                 raise FileNotFoundError("%s '%s' not found"%(self.__class__.__name__, component))
 
+        return filepath
+
+    def append_meshes(self, objects=None, component=None, prefix=None):
+        """ Append the component's Blender objects to the scene
+
+        The ``objects`` are located either in:
+        MORSE_COMPONENTS/``self._category``/``component``.blend/Object/
+        or in: MORSE_RESOURCE_PATH/``component``/Object/
+
+        If `component` is not set (neither as argument of `append_meshes` nor
+        through the :py:class:`AbstractComponent` constructor), a Blender
+        `Empty` is created instead.
+
+        .. note::
+            
+            By default, all the objects present in the component's blend file are
+            imported. If you need to exclude some (like lights you may have in your
+            blend file), prefix the name of this objects with ``_`` so that MORSE
+            ignores them.
+
+        :param objects: list of the objects names to append
+        :param component: component in which the objects are located
+        :param prefix: filter the objects names to append (used by PassiveObject)
+        :return: list of the imported (selected) Blender objects
+        """
+
+        component = component or self._blender_filename
+
+        if not component: # no Blender resource: simply create an empty
+            bpymorse.deselect_all()
+            bpymorse.add_morse_empty()
+            return [bpymorse.get_first_selected_object(),]
+
+        filepath = self._compute_filepath(component)
+
         if not objects: # append all objects from blend file
             objects = bpymorse.get_objects_in_blend(filepath)
 
+        filtered_objects = objects
+
+        # ignore objects starting with '_'
+        filtered_objects = [obj for obj in objects if not obj.startswith('_')]
+
         if prefix: # filter (used by PassiveObject)
-            objects = [obj for obj in objects if obj.startswith(prefix)]
+            filtered_objects = [obj for obj in filtered_objects if obj.startswith(prefix)]
+
+        logger.info("Importing objects from %s: %s" % (filepath,
+                                    str(objects)))
+        excluded = set(objects) - set(filtered_objects)
+        if excluded:
+            logger.info("(excluding %s)" % str(list(excluded)))
 
         # Format the objects list to append
-        objlist = [{'name':obj} for obj in objects]
+        objlist = [{'name':obj} for obj in filtered_objects]
 
         bpymorse.deselect_all()
         # Append the objects to the scene, and (auto)select them
@@ -647,6 +709,25 @@ class AbstractComponent(object):
                                  autoselect=True, files=objlist)
 
         return bpymorse.get_selected_objects()
+
+    def append_scenes(self, component=None):
+        component = component or self._blender_filename
+
+        filepath = self._compute_filepath(component)
+
+        scenes = bpymorse.get_scenes_in_blend(filepath)
+
+        # Format the objects list to append
+        sclist = [{'name':sc} for sc in scenes]
+
+        bpymorse.deselect_all()
+        # Append the objects to the scene, and (auto)select them
+        if bpymorse.version() >= (2, 71, 6):
+            bpymorse.append(directory=filepath + '/Scene/',
+                            autoselect=True, files=sclist)
+        else:
+            bpymorse.link_append(directory=filepath + '/Scene/', link=False,
+                                 autoselect=True, files=sclist)
 
     def append_collada(self, component=None):
         """ Append Collada objects to the scene

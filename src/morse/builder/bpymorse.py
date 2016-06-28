@@ -3,6 +3,9 @@ for all the cases we need to run MORSE code outside Blender (mostly for
 documentation generation purposes).
 """
 from morse.core.exceptions import MorseBuilderNoComponentError
+import logging
+
+logger = logging.getLogger('morse')
 
 bpy = None
 
@@ -42,7 +45,9 @@ new_object = empty_method
 apply_transform = empty_method
 open_sound = empty_method
 new_scene = empty_method
+del_scene = empty_method
 armatures = empty_method
+make_links_scene = empty_method
 
 if bpy:
     select_all = bpy.ops.object.select_all
@@ -75,7 +80,9 @@ if bpy:
     apply_transform = bpy.ops.object.transform_apply
     open_sound = bpy.ops.sound.open
     new_scene = bpy.ops.scene.new
+    del_scene = bpy.ops.scene.delete
     armatures = bpy.data.armatures
+    make_links_scene = bpy.ops.object.make_links_scene
 
 def version():
     if bpy:
@@ -253,14 +260,15 @@ def get_context_window():
 def set_debug(debug=True):
     bpy.app.debug = debug
 
-def get_objects_in_blend(filepath):
+
+def _get_xxx_in_blend(filepath, kind):
     if not bpy:
         return []
     objects = []
     try:
         with bpy.data.libraries.load(filepath) as (src, _):
             try:
-                objects = [obj for obj in src.objects]
+                objects = [obj for obj in getattr(src, kind)]
             except UnicodeDecodeError as detail:
                 logger.error("Unable to open file '%s'. Exception: %s" % \
                              (filepath, detail))
@@ -268,6 +276,13 @@ def get_objects_in_blend(filepath):
         logger.error(detail)
         raise MorseBuilderNoComponentError("Component not found")
     return objects
+
+
+def get_objects_in_blend(filepath):
+    return _get_xxx_in_blend(filepath, 'objects')
+
+def get_scenes_in_blend(filepath):
+    return _get_xxx_in_blend(filepath, 'scenes')
 
 def save(filepath=None, check_existing=False, compress=True):
     """ Save .blend file
@@ -286,28 +301,34 @@ def save(filepath=None, check_existing=False, compress=True):
     bpy.ops.wm.save_mainfile(filepath=filepath, check_existing=check_existing,
             compress=compress)
 
-def set_speed(fps=0, logic_step_max=0, physics_step_max=0):
+def set_speed(fps=60, logic_step_max=20, physics_step_max=20):
     """ Tune the speed of the simulation
 
     :param fps: Nominal number of game frames per second
         (physics fixed timestep = 1/fps, independently of actual frame rate)
-    :type fps: int in [1, 250], default 0
+    :type fps: default 60
     :param logic_step_max: Maximum number of logic frame per game frame if
         graphics slows down the game, higher value allows better
         synchronization with physics
-    :type logic_step_max: int in [1, 5], default 0
+    :type logic_step_max: default value : 20
     :param physics_step_max: Maximum number of physics step per game frame
         if graphics slows down the game, higher value allows physics to keep
         up with realtime
-    :type physics_step_max: int in [1, 5], default 0
+    :type physics_step_max: default value : 20
 
     usage::
 
         bpymorse.set_speed(120, 5, 5)
 
+    .. note:: It is recommended to use the same value for logic_step_max
+      | physics_step_max
+
     .. warning:: This method must be called at the top of your Builder script,
       before creating any component.
     """
+    logger.warning("`bpymorse.set_speed` is deprecated, "
+                     "use `Environment.simulator_frequency` instead")
+
     get_context_scene().game_settings.fps = fps
     get_context_scene().game_settings.logic_step_max = logic_step_max
     get_context_scene().game_settings.physics_step_max = physics_step_max

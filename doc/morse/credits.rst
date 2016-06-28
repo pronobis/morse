@@ -16,6 +16,7 @@ LAAS-CNRS (Toulouse, France)
 - Gregoire Milliez
 - Pierrick Koch
 - Matthieu Herrb
+- Harmish Khambhaita
 
 TUM (Munich, Germany)
 +++++++++++++++++++++
@@ -126,6 +127,11 @@ University of Lincoln (Lincoln, England)
 ++++++++++++++++++++++++++++++++++++++++
 
 - Joshua G Lock 
+
+University of Washington, (Seattle, USA)
+++++++++++++++++++++++++++++++++++++++++
+
+- Andrzej Pronobis
 
 Project funding
 ---------------

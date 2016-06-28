@@ -39,6 +39,10 @@ class Robot(morse.core.object.Object):
 
     def action(self):
         """ Call the regular action function of the component. """
+
+        if not self.periodic_call():
+            return
+
         # Update the component's position in the world
         self.position_3d.update(self.bge_object)
 
@@ -46,7 +50,7 @@ class Robot(morse.core.object.Object):
 
     def gettime(self):
         """ Return the current time, as seen by the robot, in seconds """
-        return blenderapi.persistantstorage().current_time + self.time_shift
+        return blenderapi.persistantstorage().time.time + self.time_shift
 
     def apply_speed(self, kind, linear_speed, angular_speed):
         """

@@ -21,7 +21,6 @@ from pymorse import Morse
 class SocketSyncTest(MorseTestCase):
 
     def setUpEnv(self):
-        bpymorse.set_speed(fps=10)
 
         robot = Morsy()
 
@@ -30,6 +29,7 @@ class SocketSyncTest(MorseTestCase):
         robot.append(clock)
 
         env = Environment('empty')
+        env.simulator_frequency(10)
         env.configure_stream_manager('socket', time_sync = True, sync_port = 5000)
 
     def test_read_clock(self):
@@ -42,7 +42,7 @@ class SocketSyncTest(MorseTestCase):
             time.sleep(0.2)
             clock = clock_stream.last()
 
-            self.assertTrue(clock['timestamp'] > prev_clock['timestamp'])
+            self.assertGreater(clock['timestamp'], prev_clock['timestamp'])
 
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sync:
                 sync.connect(('localhost', 5000))
@@ -53,7 +53,7 @@ class SocketSyncTest(MorseTestCase):
                 prev_clock = clock_stream.last()
                 time.sleep(0.2)
                 clock = clock_stream.last()
-                self.assertTrue(clock['timestamp'] == prev_clock['timestamp'])
+                self.assertEqual(clock['timestamp'], prev_clock['timestamp'])
 
                 # triggering once
                 sync.send(bytes('foo', 'utf-8'))
@@ -67,7 +67,7 @@ class SocketSyncTest(MorseTestCase):
             time.sleep(0.2)
             clock = clock_stream.last()
 
-            self.assertTrue(clock['timestamp'] > prev_clock['timestamp'])
+            self.assertGreater(clock['timestamp'], prev_clock['timestamp'])
 
 ########################## Run these tests ##########################
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ class DestinationTest(MorseTestCase):
         destination = Destination('destination')
         robot.append(destination)
         destination.add_stream('socket')
-        destination.properties(Speed=2.0, Tolerance=0.3)
+        destination.properties(Speed=2.0, Tolerance=0.3, RemainAtDestination = True)
 
         env = Environment('empty', fastmode = True)
         env.add_service('socket')
@@ -113,9 +113,9 @@ class DestinationTest(MorseTestCase):
             self.assertAlmostEqual(pose['yaw'], 0.0, delta=precision)
             self.assertAlmostEqual(pose['pitch'], 0.0, delta=precision)
             self.assertAlmostEqual(pose['roll'], 0.0, delta=precision)
-            self.assertTrue(math.fabs(pose['x']) < 0.3)
-            self.assertTrue(math.fabs(pose['y']) < 0.3)
-            self.assertTrue(math.fabs(pose['z'] - 20) < 0.3)
+            self.assertLess(math.fabs(pose['x']), 0.3)
+            self.assertLess(math.fabs(pose['y']), 0.3)
+            self.assertLess(math.fabs(pose['z'] - 20), 0.3)
 
 
 ########################## Run these tests ##########################

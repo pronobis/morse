@@ -1,7 +1,14 @@
 import logging; logger = logging.getLogger("morse." + __name__)
-import roslib; roslib.load_manifest('asctec_msgs')
 import math
-from asctec_msgs.msg import CtrlInput
+from morse.core import blenderapi
+
+try:
+    from asctec_msgs.msg import CtrlInput
+except ImportError:
+    if not blenderapi.fake:
+        raise ImportError("To use the ROS CtrlInput interface for drones, you"
+                       " must manually install the ROS 'asctec_msgs' package.")
+
 from morse.middleware.ros import ROSSubscriber
 
 class CtrlInputReader(ROSSubscriber):
